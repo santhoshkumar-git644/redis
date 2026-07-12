@@ -3,6 +3,8 @@
 #include "../memory/allocator.h"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <charconv>
 
 namespace inferno {
 namespace server {
@@ -45,6 +47,11 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "INCR") return cmdIncr(array);
     if (cmd_name == "DECR") return cmdDecr(array);
     if (cmd_name == "MEMORY") return cmdMemory(array);
+    if (cmd_name == "EXPIRE") return cmdExpire(array);
+    if (cmd_name == "PEXPIRE") return cmdPExpire(array);
+    if (cmd_name == "TTL") return cmdTTL(array);
+    if (cmd_name == "PTTL") return cmdPTTL(array);
+    if (cmd_name == "PERSIST") return cmdPersist(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -220,6 +227,77 @@ protocol::RESPObject CommandHandler::cmdMemory(const std::shared_ptr<protocol::R
     }
     
     return protocol::RESPError("ERR unknown subcommand or wrong number of arguments for 'memory' command");
+}
+
+protocol::RESPObject CommandHandler::cmdExpire(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'expire' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    int64_t seconds;
+    auto str_sec = extractString(array->elements[2]);
+    auto [ptr, ec] = std::from_chars(str_sec.data(), str_sec.data() + str_sec.size(), seconds);
+    if (ec != std::errc()) {
+        return protocol::RESPError("ERR value is not an integer or out of range");
+    }
+    
+    if (!dict_.exists(key)) return protocol::RESPInteger(0);
+    
+    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    dict_.setExpire(key, now + (seconds * 1000));
+    return protocol::RESPInteger(1);
+}
+
+protocol::RESPObject CommandHandler::cmdPExpire(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'pexpire' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    int64_t ms;
+    auto str_ms = extractString(array->elements[2]);
+    auto [ptr, ec] = std::from_chars(str_ms.data(), str_ms.data() + str_ms.size(), ms);
+    if (ec != std::errc()) {
+        return protocol::RESPError("ERR value is not an integer or out of range");
+    }
+    
+    if (!dict_.exists(key)) return protocol::RESPInteger(0);
+    
+    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    dict_.setExpire(key, now + ms);
+    return protocol::RESPInteger(1);
+}
+
+protocol::RESPObject CommandHandler::cmdTTL(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'ttl' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    int64_t ms = dict_.getTTL(key);
+    if (ms < 0) return protocol::RESPInteger(ms);
+    return protocol::RESPInteger(ms / 1000);
+}
+
+protocol::RESPObject CommandHandler::cmdPTTL(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'pttl' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    return protocol::RESPInteger(dict_.getTTL(key));
+}
+
+protocol::RESPObject CommandHandler::cmdPersist(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'persist' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    if (dict_.removeExpire(key)) {
+        return protocol::RESPInteger(1);
+    }
+    return protocol::RESPInteger(0);
 }
 
 } // namespace server
