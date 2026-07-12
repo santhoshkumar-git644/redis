@@ -126,6 +126,7 @@ void TCPServer::handleNewConnection(socket_t /* fd */, EventType type) {
 void TCPServer::handleClientDisconnect(socket_t fd) {
     LOG_INFO("Client disconnected, FD: " + std::to_string(fd));
     server::PubSubManager::instance().unsubscribeAll(fd);
+    server::CommandHandler::instance().handleClientDisconnect(fd);
     event_loop_->removeEvent(fd);
     connection_manager_->removeConnection(fd);
 }

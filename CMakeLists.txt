@@ -66,6 +66,7 @@ add_executable(
   tests/rdb_test.cpp
   tests/eviction_test.cpp
   tests/pubsub_test.cpp
+  tests/transaction_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp

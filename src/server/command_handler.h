@@ -21,6 +21,9 @@ public:
     // Process a parsed RESP command and return the response (if any)
     std::optional<protocol::RESPObject> handleCommand(const protocol::RESPObject& command, network::socket_t client_fd = 0);
 
+    // Clean up state when a client disconnects
+    void handleClientDisconnect(network::socket_t client_fd);
+
     // Get the global storage dictionary (mainly for testing)
     storage::Dict& getDict() { return dict_; }
 
@@ -63,6 +66,11 @@ private:
     std::optional<protocol::RESPObject> cmdSubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd);
     std::optional<protocol::RESPObject> cmdUnsubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd);
     
+    // Transactions
+    protocol::RESPObject cmdMulti(network::socket_t client_fd);
+    protocol::RESPObject cmdExec(network::socket_t client_fd);
+    protocol::RESPObject cmdDiscard(network::socket_t client_fd);
+    
     // List commands
     protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdRPush(const std::shared_ptr<protocol::RESPArray>& array);
@@ -93,6 +101,10 @@ private:
     std::string extractString(const protocol::RESPObject& obj);
 
     storage::Dict dict_;
+    
+    // Transaction state
+    std::unordered_set<network::socket_t> in_transaction_;
+    std::unordered_map<network::socket_t, std::vector<std::shared_ptr<protocol::RESPArray>>> transaction_queues_;
 };
 
 } // namespace server

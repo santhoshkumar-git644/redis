@@ -13,6 +13,11 @@
 namespace inferno {
 namespace server {
 
+void CommandHandler::handleClientDisconnect(network::socket_t client_fd) {
+    in_transaction_.erase(client_fd);
+    transaction_queues_.erase(client_fd);
+}
+
 std::string CommandHandler::extractString(const protocol::RESPObject& obj) {
     if (std::holds_alternative<protocol::RESPBulkString>(obj)) {
         return std::get<protocol::RESPBulkString>(obj);
@@ -36,10 +41,16 @@ std::optional<protocol::RESPObject> CommandHandler::handleCommand(const protocol
     if (cmd_name.empty()) {
         return protocol::RESPError("ERR Protocol error: invalid command name");
     }
-
-    // Convert to upper case for case-insensitive matching
     std::transform(cmd_name.begin(), cmd_name.end(), cmd_name.begin(),
                    [](unsigned char c){ return std::toupper(c); });
+
+    // Transaction queuing interception
+    if (in_transaction_.count(client_fd) > 0 && client_fd != 0) {
+        if (cmd_name != "MULTI" && cmd_name != "EXEC" && cmd_name != "DISCARD" && cmd_name != "QUIT") {
+            transaction_queues_[client_fd].push_back(array);
+            return protocol::RESPSimpleString("QUEUED");
+        }
+    }
 
     // Dispatch command
     std::optional<protocol::RESPObject> response;
@@ -88,6 +99,9 @@ protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name
     if (cmd_name == "BGSAVE") return cmdBgSave(array);
     if (cmd_name == "CONFIG") return cmdConfig(array);
     if (cmd_name == "PUBLISH") return cmdPublish(array);
+    if (cmd_name == "MULTI") return cmdMulti(array);
+    if (cmd_name == "EXEC") return cmdExec(array);
+    if (cmd_name == "DISCARD") return cmdDiscard(array);
     if (cmd_name == "LPUSH") return cmdLPush(array);
     if (cmd_name == "RPUSH") return cmdRPush(array);
     if (cmd_name == "LPOP") return cmdLPop(array);
@@ -505,6 +519,55 @@ std::optional<protocol::RESPObject> CommandHandler::cmdUnsubscribe(const std::sh
     }
     
     return std::nullopt;
+}
+
+protocol::RESPObject CommandHandler::cmdMulti(network::socket_t client_fd) {
+    if (client_fd == 0) return protocol::RESPError("ERR client socket required");
+    if (in_transaction_.count(client_fd) > 0) {
+        return protocol::RESPError("ERR MULTI calls can not be nested");
+    }
+    in_transaction_.insert(client_fd);
+    transaction_queues_[client_fd].clear();
+    return protocol::RESPSimpleString("OK");
+}
+
+protocol::RESPObject CommandHandler::cmdExec(network::socket_t client_fd) {
+    if (client_fd == 0) return protocol::RESPError("ERR client socket required");
+    if (in_transaction_.count(client_fd) == 0) {
+        return protocol::RESPError("ERR EXEC without MULTI");
+    }
+    
+    auto& queue = transaction_queues_[client_fd];
+    auto result = std::make_shared<protocol::RESPArray>();
+    
+    for (const auto& cmd : queue) {
+        // Execute normally but without triggering the queuing logic (we temporarily remove from in_transaction_)
+        in_transaction_.erase(client_fd);
+        auto opt_res = handleCommand(cmd, client_fd);
+        in_transaction_.insert(client_fd); // Restore for safety, though we will clear it at the end
+        
+        if (opt_res) {
+            result->elements.push_back(*opt_res);
+        } else {
+            result->elements.push_back(protocol::RESPNull());
+        }
+    }
+    
+    in_transaction_.erase(client_fd);
+    transaction_queues_.erase(client_fd);
+    
+    return result;
+}
+
+protocol::RESPObject CommandHandler::cmdDiscard(network::socket_t client_fd) {
+    if (client_fd == 0) return protocol::RESPError("ERR client socket required");
+    if (in_transaction_.count(client_fd) == 0) {
+        return protocol::RESPError("ERR DISCARD without MULTI");
+    }
+    
+    in_transaction_.erase(client_fd);
+    transaction_queues_.erase(client_fd);
+    return protocol::RESPSimpleString("OK");
 }
 
 protocol::RESPObject CommandHandler::cmdLPush(const std::shared_ptr<protocol::RESPArray>& array) {
