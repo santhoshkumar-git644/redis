@@ -66,6 +66,12 @@ private:
     protocol::RESPObject cmdHDel(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdHGetAll(const std::shared_ptr<protocol::RESPArray>& array);
 
+    // ZSet commands
+    protocol::RESPObject cmdZAdd(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdZScore(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdZRange(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdZRangeByScore(const std::shared_ptr<protocol::RESPArray>& array);
+
     // Helper to extract string from RESPObject
     std::string extractString(const protocol::RESPObject& obj);
 

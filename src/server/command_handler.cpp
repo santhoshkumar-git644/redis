@@ -66,6 +66,10 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "HGET") return cmdHGet(array);
     if (cmd_name == "HDEL") return cmdHDel(array);
     if (cmd_name == "HGETALL") return cmdHGetAll(array);
+    if (cmd_name == "ZADD") return cmdZAdd(array);
+    if (cmd_name == "ZSCORE") return cmdZScore(array);
+    if (cmd_name == "ZRANGE") return cmdZRange(array);
+    if (cmd_name == "ZRANGEBYSCORE") return cmdZRangeByScore(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -647,6 +651,147 @@ protocol::RESPObject CommandHandler::cmdHGetAll(const std::shared_ptr<protocol::
     for (const auto& [field, value] : opt_val->getHash()) {
         result->elements.push_back(protocol::RESPBulkString(field));
         result->elements.push_back(protocol::RESPBulkString(value));
+    }
+    
+    return result;
+}
+
+protocol::RESPObject CommandHandler::cmdZAdd(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 4 || array->elements.size() % 2 != 0) {
+        return protocol::RESPError("ERR wrong number of arguments for 'zadd' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) {
+        opt_val = storage::InfernoObject::createZSet();
+        dict_.set(key, opt_val);
+    } else if (opt_val->getType() != storage::ObjectType::ZSET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& zset = opt_val->getZSet();
+    int added = 0;
+    for (size_t i = 2; i < array->elements.size(); i += 2) {
+        double score;
+        auto str_score = extractString(array->elements[i]);
+        auto [ptr, ec] = std::from_chars(str_score.data(), str_score.data() + str_score.size(), score);
+        if (ec != std::errc()) {
+            return protocol::RESPError("ERR value is not a valid float");
+        }
+        std::string member = extractString(array->elements[i+1]);
+        if (zset->add(member, score)) {
+            added++;
+        }
+    }
+    
+    return protocol::RESPInteger(added);
+}
+
+protocol::RESPObject CommandHandler::cmdZScore(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'zscore' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    std::string member = extractString(array->elements[2]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPNull();
+    if (opt_val->getType() != storage::ObjectType::ZSET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    double score;
+    if (opt_val->getZSet()->score(member, score)) {
+        // Redis returns scores as strings
+        char buf[64];
+        auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), score);
+        return protocol::RESPBulkString(std::string(buf, ptr));
+    }
+    return protocol::RESPNull();
+}
+
+protocol::RESPObject CommandHandler::cmdZRange(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 4) {
+        return protocol::RESPError("ERR wrong number of arguments for 'zrange' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    int64_t start, end;
+    auto str_start = extractString(array->elements[2]);
+    auto str_end = extractString(array->elements[3]);
+    
+    if (std::from_chars(str_start.data(), str_start.data() + str_start.size(), start).ec != std::errc() ||
+        std::from_chars(str_end.data(), str_end.data() + str_end.size(), end).ec != std::errc()) {
+        return protocol::RESPError("ERR value is not an integer or out of range");
+    }
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return std::make_shared<protocol::RESPArray>();
+    if (opt_val->getType() != storage::ObjectType::ZSET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& zset = opt_val->getZSet();
+    const auto& zsl = zset->zsl();
+    int64_t len = zsl.length();
+    
+    if (start < 0) start = len + start;
+    if (end < 0) end = len + end;
+    if (start < 0) start = 0;
+    if (start > end || start >= len) {
+        return std::make_shared<protocol::RESPArray>();
+    }
+    if (end >= len) end = len - 1;
+    
+    auto result = std::make_shared<protocol::RESPArray>();
+    auto node = zsl.header()->forward[0];
+    
+    for (int64_t i = 0; i < start && node; ++i) {
+        node = node->forward[0];
+    }
+    
+    for (int64_t i = start; i <= end && node; ++i) {
+        result->elements.push_back(protocol::RESPBulkString(node->ele));
+        node = node->forward[0];
+    }
+    
+    return result;
+}
+
+protocol::RESPObject CommandHandler::cmdZRangeByScore(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 4) {
+        return protocol::RESPError("ERR wrong number of arguments for 'zrangebyscore' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    double min, max;
+    auto str_min = extractString(array->elements[2]);
+    auto str_max = extractString(array->elements[3]);
+    
+    if (str_min == "-inf") min = -std::numeric_limits<double>::infinity();
+    else if (std::from_chars(str_min.data(), str_min.data() + str_min.size(), min).ec != std::errc()) {
+        return protocol::RESPError("ERR min or max is not a float");
+    }
+    
+    if (str_max == "+inf") max = std::numeric_limits<double>::infinity();
+    else if (std::from_chars(str_max.data(), str_max.data() + str_max.size(), max).ec != std::errc()) {
+        return protocol::RESPError("ERR min or max is not a float");
+    }
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return std::make_shared<protocol::RESPArray>();
+    if (opt_val->getType() != storage::ObjectType::ZSET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto result = std::make_shared<protocol::RESPArray>();
+    auto& zset = opt_val->getZSet();
+    auto node = zset->zsl().firstInRange(min, max);
+    
+    while (node && node->score <= max) {
+        result->elements.push_back(protocol::RESPBulkString(node->ele));
+        node = node->forward[0];
     }
     
     return result;
