@@ -65,6 +65,7 @@ add_executable(
   tests/aof_test.cpp
   tests/rdb_test.cpp
   tests/eviction_test.cpp
+  tests/pubsub_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
@@ -75,6 +76,7 @@ add_executable(
   src/storage/value.cpp
   src/storage/dict.cpp
   src/storage/skiplist.cpp
+  src/server/pubsub.cpp
   src/persistence/aof.cpp
   src/persistence/rdb.cpp
   src/server/command_handler.cpp
