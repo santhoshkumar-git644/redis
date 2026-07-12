@@ -8,6 +8,7 @@
 #include <deque>
 #include <unordered_set>
 #include <unordered_map>
+#include "skiplist.h"
 
 namespace inferno {
 namespace storage {
@@ -17,13 +18,15 @@ enum class ObjectType {
     LIST,
     SET,
     HASH,
+    ZSET,
 };
 
 enum class ObjectEncoding {
     RAW,        
     INT,
     QUICKLIST,   // Using std::deque for chunked contiguous memory
-    HASHTABLE    // Using std::unordered_map/set
+    HASHTABLE,   // Using std::unordered_map/set
+    SKIPLIST     // Using ZSet (SkipList + Dict)
 };
 
 class InfernoObject {
@@ -44,6 +47,7 @@ public:
     static SharedPtr createList();
     static SharedPtr createSet();
     static SharedPtr createHash();
+    static SharedPtr createZSet();
     
     ~InfernoObject() = default;
 
@@ -64,6 +68,10 @@ public:
     // Hash operations
     std::unordered_map<std::string, std::string>& getHash();
     const std::unordered_map<std::string, std::string>& getHash() const;
+    
+    // ZSet operations
+    std::shared_ptr<ZSet>& getZSet();
+    const std::shared_ptr<ZSet>& getZSet() const;
 
 private:
     // Private constructors to enforce use of `create` (factory pattern)
@@ -79,13 +87,17 @@ private:
     // Construct empty hash
     struct HashTag {};
     explicit InfernoObject(HashTag);
+    // Construct empty zset
+    struct ZSetTag {};
+    explicit InfernoObject(ZSetTag);
 
     void try_encode_int();
 
     ObjectType type_;
     ObjectEncoding encoding_;
     std::variant<std::string, int64_t, std::deque<std::string>, 
-                 std::unordered_set<std::string>, std::unordered_map<std::string, std::string>> value_;
+                 std::unordered_set<std::string>, std::unordered_map<std::string, std::string>,
+                 std::shared_ptr<ZSet>> value_;
 };
 
 // Global pool of shared objects

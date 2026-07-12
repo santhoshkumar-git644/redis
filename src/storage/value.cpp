@@ -39,6 +39,9 @@ InfernoObject::InfernoObject(SetTag)
 InfernoObject::InfernoObject(HashTag)
     : type_(ObjectType::HASH), encoding_(ObjectEncoding::HASHTABLE), value_(std::unordered_map<std::string, std::string>()) {}
 
+InfernoObject::InfernoObject(ZSetTag)
+    : type_(ObjectType::ZSET), encoding_(ObjectEncoding::SKIPLIST), value_(std::make_shared<ZSet>()) {}
+
 InfernoObject::SharedPtr InfernoObject::create(std::string str) {
     // We can check if it parses as an int first, and if so, check the shared pool
     int64_t val;
@@ -67,6 +70,10 @@ InfernoObject::SharedPtr InfernoObject::createSet() {
 
 InfernoObject::SharedPtr InfernoObject::createHash() {
     return std::shared_ptr<InfernoObject>(new InfernoObject(HashTag{}));
+}
+
+InfernoObject::SharedPtr InfernoObject::createZSet() {
+    return std::shared_ptr<InfernoObject>(new InfernoObject(ZSetTag{}));
 }
 
 void InfernoObject::try_encode_int() {
@@ -141,6 +148,20 @@ const std::unordered_map<std::string, std::string>& InfernoObject::getHash() con
         throw std::runtime_error("Object is not a hash");
     }
     return std::get<std::unordered_map<std::string, std::string>>(value_);
+}
+
+std::shared_ptr<ZSet>& InfernoObject::getZSet() {
+    if (type_ != ObjectType::ZSET) {
+        throw std::runtime_error("Object is not a zset");
+    }
+    return std::get<std::shared_ptr<ZSet>>(value_);
+}
+
+const std::shared_ptr<ZSet>& InfernoObject::getZSet() const {
+    if (type_ != ObjectType::ZSET) {
+        throw std::runtime_error("Object is not a zset");
+    }
+    return std::get<std::shared_ptr<ZSet>>(value_);
 }
 
 } // namespace storage
