@@ -1,5 +1,6 @@
 #include "tcp_server.h"
 #include "../utils/logger.h"
+#include "../server/command_handler.h"
 #include <vector>
 #include <functional>
 
@@ -119,8 +120,10 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
             while (true) {
                 auto res = parser.parse(parsed_obj);
                 if (res == protocol::RESPParser::ParseResult::OK) {
-                    // For milestone 2, we just serialize it back and echo to prove parsing works
-                    std::string response = protocol::serializeRESP(parsed_obj);
+                    // Dispatch the command to the CommandHandler
+                    protocol::RESPObject response_obj = server::CommandHandler::instance().handleCommand(parsed_obj);
+                    
+                    std::string response = protocol::serializeRESP(response_obj);
                     connection->getSocket().send(response.c_str(), response.length());
                 } else if (res == protocol::RESPParser::ParseResult::NEED_MORE) {
                     break;
