@@ -119,24 +119,25 @@ bool AOFManager::load() {
     LOG_INFO("Loading AOF file...");
     
     protocol::RESPParser parser;
-    parser.feed(data);
+    parser.feed(data.c_str(), data.length());
     
     size_t cmd_count = 0;
+    protocol::RESPObject parsed_obj;
     while (true) {
-        auto obj = parser.parse();
-        if (!obj) break;
-        
-        if (obj->getType() == protocol::RESPObject::Type::ARRAY) {
-            auto arr = std::dynamic_pointer_cast<protocol::RESPArray>(obj);
-            if (arr) {
-                // Execute command locally without going through network
-                // We shouldn't write these back to AOF while loading
+        auto res = parser.parse(parsed_obj);
+        if (res == protocol::RESPParser::ParseResult::OK) {
+            if (std::holds_alternative<std::shared_ptr<protocol::RESPArray>>(parsed_obj)) {
                 bool was_running = running_;
                 running_ = false; // Disable appending while loading
-                server::CommandHandler::instance().handleCommand(arr);
+                server::CommandHandler::instance().handleCommand(parsed_obj);
                 running_ = was_running;
                 cmd_count++;
             }
+        } else if (res == protocol::RESPParser::ParseResult::NEED_MORE) {
+            break;
+        } else {
+            LOG_ERROR("Malformed RESP data in AOF file");
+            break;
         }
     }
     

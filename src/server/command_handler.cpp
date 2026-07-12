@@ -1,10 +1,12 @@
 #include "command_handler.h"
 #include "../utils/logger.h"
 #include "../memory/allocator.h"
+#include "../persistence/aof.h"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <charconv>
+#include <unordered_set>
 
 namespace inferno {
 namespace server {
@@ -34,14 +36,29 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     }
 
     // Convert to upper case for case-insensitive matching
-    std::transform(cmd_name.begin(), cmd_name.end(), cmd_name.begin(), ::toupper);
+    std::transform(cmd_name.begin(), cmd_name.end(), cmd_name.begin(),
+                   [](unsigned char c){ return std::toupper(c); });
 
+    protocol::RESPObject result = dispatchCommand(cmd_name, array);
+    
+    // Only append to AOF if the command succeeded and it is a mutating command
+    if (!std::holds_alternative<protocol::RESPError>(result)) {
+        if (isMutatingCommand(cmd_name)) {
+            persistence::AOFManager::instance().append(array);
+        }
+    }
+    
+    return result;
+}
+
+protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name, const std::shared_ptr<protocol::RESPArray>& array) {
+    // Moved the massive if-else block logic here
     if (cmd_name == "PING") return cmdPing(array);
     if (cmd_name == "ECHO") return cmdEcho(array);
     if (cmd_name == "SET") return cmdSet(array);
     if (cmd_name == "GET") return cmdGet(array);
-    if (cmd_name == "DEL") return cmdDel(array);
     if (cmd_name == "EXISTS") return cmdExists(array);
+    if (cmd_name == "DEL") return cmdDel(array);
     if (cmd_name == "MSET") return cmdMSet(array);
     if (cmd_name == "MGET") return cmdMGet(array);
     if (cmd_name == "INCR") return cmdIncr(array);
@@ -72,6 +89,14 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "ZRANGEBYSCORE") return cmdZRangeByScore(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
+}
+
+bool CommandHandler::isMutatingCommand(const std::string& cmd_name) {
+    static const std::unordered_set<std::string> mutating_cmds = {
+        "SET", "MSET", "INCR", "DECR", "EXPIRE", "PEXPIRE", "PERSIST",
+        "LPUSH", "RPUSH", "LPOP", "RPOP", "SADD", "SREM", "HSET", "HDEL", "ZADD"
+    };
+    return mutating_cmds.count(cmd_name) > 0;
 }
 
 protocol::RESPObject CommandHandler::cmdPing(const std::shared_ptr<protocol::RESPArray>& array) {

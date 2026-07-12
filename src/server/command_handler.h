@@ -29,6 +29,9 @@ public:
 private:
     CommandHandler() = default;
 
+    bool isMutatingCommand(const std::string& cmd_name);
+    protocol::RESPObject dispatchCommand(const std::string& cmd_name, const std::shared_ptr<protocol::RESPArray>& array);
+
     // Command implementations
     protocol::RESPObject cmdPing(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdEcho(const std::shared_ptr<protocol::RESPArray>& array);

@@ -1,6 +1,7 @@
 #include "tcp_server.h"
 #include "../utils/logger.h"
 #include "../server/command_handler.h"
+#include "../persistence/aof.h"
 #include <vector>
 #include <functional>
 #include <thread>
@@ -51,6 +52,11 @@ bool TCPServer::start() {
         this->handleNewConnection(fd, type);
     };
 
+    // Load AOF before accepting any connections
+    persistence::AOFManager::instance().load();
+    // Start AOF persistence thread
+    persistence::AOFManager::instance().start();
+
     if (!event_loop_->addEvent(acceptor_socket_.getFd(), EventType::READ, accept_handler)) {
         LOG_ERROR("Failed to add acceptor socket to event loop");
         return false;
@@ -72,6 +78,7 @@ bool TCPServer::start() {
 void TCPServer::stop() {
     LOG_INFO("Stopping server...");
     event_loop_->stop();
+    persistence::AOFManager::instance().stop();
     connection_manager_->closeAll();
     acceptor_socket_.close();
 }
