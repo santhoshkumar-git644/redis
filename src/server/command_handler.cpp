@@ -1,5 +1,6 @@
 #include "command_handler.h"
 #include "../utils/logger.h"
+#include "../memory/allocator.h"
 #include <algorithm>
 #include <cctype>
 
@@ -43,6 +44,7 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "MGET") return cmdMGet(array);
     if (cmd_name == "INCR") return cmdIncr(array);
     if (cmd_name == "DECR") return cmdDecr(array);
+    if (cmd_name == "MEMORY") return cmdMemory(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -177,6 +179,47 @@ protocol::RESPObject CommandHandler::cmdDecr(const std::shared_ptr<protocol::RES
     val--;
     dict_.set(key, storage::InfernoObject::create(val));
     return protocol::RESPInteger(val);
+}
+
+protocol::RESPObject CommandHandler::cmdMemory(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'memory' command");
+    }
+    
+    std::string subcmd = extractString(array->elements[1]);
+    std::transform(subcmd.begin(), subcmd.end(), subcmd.begin(), ::toupper);
+    
+    if (subcmd == "STATS") {
+        auto result = std::make_shared<protocol::RESPArray>();
+        
+        result->elements.push_back(protocol::RESPBulkString("peak.allocated"));
+        result->elements.push_back(protocol::RESPInteger(memory::Allocator::getPeakMemory()));
+        
+        result->elements.push_back(protocol::RESPBulkString("total.allocated"));
+        result->elements.push_back(protocol::RESPInteger(memory::Allocator::getUsedMemory()));
+        
+        result->elements.push_back(protocol::RESPBulkString("dict.size"));
+        result->elements.push_back(protocol::RESPInteger(dict_.size()));
+        
+        return result;
+    } else if (subcmd == "USAGE") {
+        if (array->elements.size() != 3) {
+            return protocol::RESPError("ERR wrong number of arguments for 'memory usage' command");
+        }
+        std::string key = extractString(array->elements[2]);
+        auto opt_val = dict_.get(key);
+        if (!opt_val) {
+            return protocol::RESPNull();
+        }
+        // Very basic estimation for milestone 4
+        size_t usage = sizeof(storage::DictEntry) + key.capacity();
+        if (opt_val->getEncoding() == storage::ObjectEncoding::RAW) {
+            usage += opt_val->toString().capacity();
+        }
+        return protocol::RESPInteger(usage);
+    }
+    
+    return protocol::RESPError("ERR unknown subcommand or wrong number of arguments for 'memory' command");
 }
 
 } // namespace server

@@ -36,6 +36,7 @@ private:
     protocol::RESPObject cmdMGet(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdIncr(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdDecr(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdMemory(const std::shared_ptr<protocol::RESPArray>& array);
 
     // Helper to extract string from RESPObject
     std::string extractString(const protocol::RESPObject& obj);

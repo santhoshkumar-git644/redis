@@ -27,6 +27,7 @@ add_executable(inferno-server
     src/network/event_loop.cpp
     src/network/connection_manager.cpp
     src/network/tcp_server.cpp
+    src/memory/allocator.cpp
     src/protocol/resp_parser.cpp
     src/protocol/resp_types.cpp
     src/storage/value.cpp
@@ -56,10 +57,12 @@ add_executable(
   tests/network_test.cpp
   tests/resp_test.cpp
   tests/storage_test.cpp
+  tests/memory_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
   src/network/tcp_server.cpp
+  src/memory/allocator.cpp
   src/protocol/resp_parser.cpp
   src/protocol/resp_types.cpp
   src/storage/value.cpp
