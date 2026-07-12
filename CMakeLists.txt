@@ -59,6 +59,7 @@ add_executable(
   tests/storage_test.cpp
   tests/memory_test.cpp
   tests/expiration_test.cpp
+  tests/list_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
