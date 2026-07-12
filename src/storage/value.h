@@ -6,6 +6,8 @@
 #include <memory>
 #include "../memory/allocator.h"
 #include <deque>
+#include <unordered_set>
+#include <unordered_map>
 
 namespace inferno {
 namespace storage {
@@ -13,12 +15,15 @@ namespace storage {
 enum class ObjectType {
     STRING,
     LIST,
+    SET,
+    HASH,
 };
 
 enum class ObjectEncoding {
     RAW,        
     INT,
-    QUICKLIST    // Using std::deque for chunked contiguous memory
+    QUICKLIST,   // Using std::deque for chunked contiguous memory
+    HASHTABLE    // Using std::unordered_map/set
 };
 
 class InfernoObject {
@@ -37,6 +42,8 @@ public:
     static SharedPtr create(std::string str);
     static SharedPtr create(int64_t val);
     static SharedPtr createList();
+    static SharedPtr createSet();
+    static SharedPtr createHash();
     
     ~InfernoObject() = default;
 
@@ -49,6 +56,14 @@ public:
     // List operations
     std::deque<std::string>& getList();
     const std::deque<std::string>& getList() const;
+    
+    // Set operations
+    std::unordered_set<std::string>& getSet();
+    const std::unordered_set<std::string>& getSet() const;
+    
+    // Hash operations
+    std::unordered_map<std::string, std::string>& getHash();
+    const std::unordered_map<std::string, std::string>& getHash() const;
 
 private:
     // Private constructors to enforce use of `create` (factory pattern)
@@ -58,12 +73,19 @@ private:
     // Construct empty list
     struct ListTag {};
     explicit InfernoObject(ListTag);
+    // Construct empty set
+    struct SetTag {};
+    explicit InfernoObject(SetTag);
+    // Construct empty hash
+    struct HashTag {};
+    explicit InfernoObject(HashTag);
 
     void try_encode_int();
 
     ObjectType type_;
     ObjectEncoding encoding_;
-    std::variant<std::string, int64_t, std::deque<std::string>> value_;
+    std::variant<std::string, int64_t, std::deque<std::string>, 
+                 std::unordered_set<std::string>, std::unordered_map<std::string, std::string>> value_;
 };
 
 // Global pool of shared objects

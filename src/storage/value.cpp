@@ -33,6 +33,12 @@ InfernoObject::InfernoObject(int64_t val)
 InfernoObject::InfernoObject(ListTag)
     : type_(ObjectType::LIST), encoding_(ObjectEncoding::QUICKLIST), value_(std::deque<std::string>()) {}
 
+InfernoObject::InfernoObject(SetTag)
+    : type_(ObjectType::SET), encoding_(ObjectEncoding::HASHTABLE), value_(std::unordered_set<std::string>()) {}
+
+InfernoObject::InfernoObject(HashTag)
+    : type_(ObjectType::HASH), encoding_(ObjectEncoding::HASHTABLE), value_(std::unordered_map<std::string, std::string>()) {}
+
 InfernoObject::SharedPtr InfernoObject::create(std::string str) {
     // We can check if it parses as an int first, and if so, check the shared pool
     int64_t val;
@@ -53,6 +59,14 @@ InfernoObject::SharedPtr InfernoObject::create(int64_t val) {
 
 InfernoObject::SharedPtr InfernoObject::createList() {
     return std::shared_ptr<InfernoObject>(new InfernoObject(ListTag{}));
+}
+
+InfernoObject::SharedPtr InfernoObject::createSet() {
+    return std::shared_ptr<InfernoObject>(new InfernoObject(SetTag{}));
+}
+
+InfernoObject::SharedPtr InfernoObject::createHash() {
+    return std::shared_ptr<InfernoObject>(new InfernoObject(HashTag{}));
 }
 
 void InfernoObject::try_encode_int() {
@@ -99,6 +113,34 @@ const std::deque<std::string>& InfernoObject::getList() const {
         throw std::runtime_error("Object is not a list");
     }
     return std::get<std::deque<std::string>>(value_);
+}
+
+std::unordered_set<std::string>& InfernoObject::getSet() {
+    if (type_ != ObjectType::SET) {
+        throw std::runtime_error("Object is not a set");
+    }
+    return std::get<std::unordered_set<std::string>>(value_);
+}
+
+const std::unordered_set<std::string>& InfernoObject::getSet() const {
+    if (type_ != ObjectType::SET) {
+        throw std::runtime_error("Object is not a set");
+    }
+    return std::get<std::unordered_set<std::string>>(value_);
+}
+
+std::unordered_map<std::string, std::string>& InfernoObject::getHash() {
+    if (type_ != ObjectType::HASH) {
+        throw std::runtime_error("Object is not a hash");
+    }
+    return std::get<std::unordered_map<std::string, std::string>>(value_);
+}
+
+const std::unordered_map<std::string, std::string>& InfernoObject::getHash() const {
+    if (type_ != ObjectType::HASH) {
+        throw std::runtime_error("Object is not a hash");
+    }
+    return std::get<std::unordered_map<std::string, std::string>>(value_);
 }
 
 } // namespace storage
