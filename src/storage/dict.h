@@ -14,10 +14,11 @@ namespace storage {
 struct DictEntry {
     std::string key;
     InfernoObject::SharedPtr value;
+    uint64_t expire_time_ms;
     DictEntry* next;
 
     DictEntry(std::string k, InfernoObject::SharedPtr v) 
-        : key(std::move(k)), value(std::move(v)), next(nullptr) {}
+        : key(std::move(k)), value(std::move(v)), expire_time_ms(0), next(nullptr) {}
 };
 
 class Dict {
@@ -34,6 +35,12 @@ public:
     bool del(const std::string& key);
     bool exists(const std::string& key) const;
 
+    // Expiration API
+    bool setExpire(const std::string& key, uint64_t expire_time_ms);
+    int64_t getTTL(const std::string& key) const;
+    bool removeExpire(const std::string& key);
+    void activeExpireCheck();
+
     size_t size() const { return size_; }
 
 private:
@@ -41,6 +48,7 @@ private:
     void resize();
 
     std::vector<DictEntry*> table_;
+    std::vector<std::string> keys_with_ttl_; // For fast sampling
     size_t size_;
     
     // For Milestone 3, we use a shared_mutex to allow concurrent reads and exclusive writes.
