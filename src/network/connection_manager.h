@@ -2,6 +2,7 @@
 #define INFERNOCACHE_CONNECTION_MANAGER_H
 
 #include "socket.h"
+#include "../protocol/resp_parser.h"
 #include <unordered_map>
 #include <memory>
 #include <mutex>
@@ -16,9 +17,12 @@ public:
     
     Socket& getSocket() { return socket_; }
     const Socket& getSocket() const { return socket_; }
+    
+    protocol::RESPParser& getParser() { return parser_; }
 
 private:
     Socket socket_;
+    protocol::RESPParser parser_;
 };
 
 class ConnectionManager {

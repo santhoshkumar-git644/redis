@@ -27,6 +27,8 @@ add_executable(inferno-server
     src/network/event_loop.cpp
     src/network/connection_manager.cpp
     src/network/tcp_server.cpp
+    src/protocol/resp_parser.cpp
+    src/protocol/resp_types.cpp
 )
 
 target_link_libraries(inferno-server PRIVATE Threads::Threads)
@@ -49,10 +51,13 @@ enable_testing()
 add_executable(
   inferno-tests
   tests/network_test.cpp
+  tests/resp_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
   src/network/tcp_server.cpp
+  src/protocol/resp_parser.cpp
+  src/protocol/resp_types.cpp
 )
 
 target_link_libraries(

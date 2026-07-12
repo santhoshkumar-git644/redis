@@ -112,9 +112,27 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
         int bytes_read = connection->getSocket().receive(buffer.data(), buffer.size());
 
         if (bytes_read > 0) {
-            // For Milestone 1, we just echo the data back
-            // LOG_DEBUG("Received " + std::to_string(bytes_read) + " bytes");
-            connection->getSocket().send(buffer.data(), bytes_read);
+            auto& parser = connection->getParser();
+            parser.feed(buffer.data(), bytes_read);
+
+            protocol::RESPObject parsed_obj;
+            while (true) {
+                auto res = parser.parse(parsed_obj);
+                if (res == protocol::RESPParser::ParseResult::OK) {
+                    // For milestone 2, we just serialize it back and echo to prove parsing works
+                    std::string response = protocol::serializeRESP(parsed_obj);
+                    connection->getSocket().send(response.c_str(), response.length());
+                } else if (res == protocol::RESPParser::ParseResult::NEED_MORE) {
+                    break;
+                } else {
+                    LOG_ERROR("Malformed RESP data received from client");
+                    std::string err = "-ERR Protocol error\r\n";
+                    connection->getSocket().send(err.c_str(), err.length());
+                    event_loop_->removeEvent(fd);
+                    connection_manager_->removeConnection(fd);
+                    break;
+                }
+            }
         } else if (bytes_read == 0) {
             // Client closed connection gracefully
             LOG_INFO("Client disconnected gracefully");
