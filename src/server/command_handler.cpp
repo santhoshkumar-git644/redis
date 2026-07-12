@@ -72,6 +72,7 @@ protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name
     if (cmd_name == "PERSIST") return cmdPersist(array);
     if (cmd_name == "SAVE") return cmdSave(array);
     if (cmd_name == "BGSAVE") return cmdBgSave(array);
+    if (cmd_name == "CONFIG") return cmdConfig(array);
     if (cmd_name == "LPUSH") return cmdLPush(array);
     if (cmd_name == "RPUSH") return cmdRPush(array);
     if (cmd_name == "LPOP") return cmdLPop(array);
@@ -372,6 +373,64 @@ protocol::RESPObject CommandHandler::cmdBgSave(const std::shared_ptr<protocol::R
     } else {
         return protocol::RESPError("ERR Background save failed");
     }
+}
+
+protocol::RESPObject CommandHandler::cmdConfig(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'config' command");
+    }
+    
+    std::string action = extractString(array->elements[1]);
+    std::transform(action.begin(), action.end(), action.begin(), ::toupper);
+    
+    std::string param = extractString(array->elements[2]);
+    std::transform(param.begin(), param.end(), param.begin(), ::tolower);
+    
+    if (action == "SET") {
+        if (array->elements.size() != 4) return protocol::RESPError("ERR wrong number of arguments for 'config set'");
+        std::string value = extractString(array->elements[3]);
+        
+        if (param == "maxmemory_keys") {
+            try {
+                size_t max_keys = std::stoull(value);
+                dict_.setMaxKeys(max_keys);
+                return protocol::RESPSimpleString("OK");
+            } catch (...) {
+                return protocol::RESPError("ERR invalid maxmemory_keys value");
+            }
+        } else if (param == "maxmemory-policy") {
+            std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+            if (value == "noeviction") dict_.setEvictionPolicy(storage::EvictionPolicy::NOEVICTION);
+            else if (value == "allkeys-lru") dict_.setEvictionPolicy(storage::EvictionPolicy::ALLKEYS_LRU);
+            else if (value == "allkeys-lfu") dict_.setEvictionPolicy(storage::EvictionPolicy::ALLKEYS_LFU);
+            else if (value == "allkeys-random") dict_.setEvictionPolicy(storage::EvictionPolicy::ALLKEYS_RANDOM);
+            else return protocol::RESPError("ERR unsupported maxmemory-policy");
+            return protocol::RESPSimpleString("OK");
+        }
+        return protocol::RESPError("ERR unsupported config parameter");
+    } else if (action == "GET") {
+        if (param == "maxmemory_keys") {
+            auto res = std::make_shared<protocol::RESPArray>();
+            res->elements.push_back(protocol::RESPBulkString("maxmemory_keys"));
+            res->elements.push_back(protocol::RESPBulkString(std::to_string(dict_.getMaxKeys())));
+            return res;
+        } else if (param == "maxmemory-policy") {
+            auto res = std::make_shared<protocol::RESPArray>();
+            res->elements.push_back(protocol::RESPBulkString("maxmemory-policy"));
+            std::string policy = "noeviction";
+            switch (dict_.getEvictionPolicy()) {
+                case storage::EvictionPolicy::ALLKEYS_LRU: policy = "allkeys-lru"; break;
+                case storage::EvictionPolicy::ALLKEYS_LFU: policy = "allkeys-lfu"; break;
+                case storage::EvictionPolicy::ALLKEYS_RANDOM: policy = "allkeys-random"; break;
+                default: break;
+            }
+            res->elements.push_back(protocol::RESPBulkString(policy));
+            return res;
+        }
+        return protocol::RESPError("ERR unsupported config parameter");
+    }
+    
+    return protocol::RESPError("ERR unknown CONFIG subcommand");
 }
 
 protocol::RESPObject CommandHandler::cmdLPush(const std::shared_ptr<protocol::RESPArray>& array) {

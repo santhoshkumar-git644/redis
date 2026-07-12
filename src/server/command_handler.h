@@ -53,6 +53,9 @@ private:
     protocol::RESPObject cmdSave(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdBgSave(const std::shared_ptr<protocol::RESPArray>& array);
     
+    // Server Configuration
+    protocol::RESPObject cmdConfig(const std::shared_ptr<protocol::RESPArray>& array);
+    
     // List commands
     protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdRPush(const std::shared_ptr<protocol::RESPArray>& array);

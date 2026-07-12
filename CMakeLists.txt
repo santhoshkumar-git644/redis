@@ -64,6 +64,7 @@ add_executable(
   tests/zset_test.cpp
   tests/aof_test.cpp
   tests/rdb_test.cpp
+  tests/eviction_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
