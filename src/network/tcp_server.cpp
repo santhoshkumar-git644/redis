@@ -66,12 +66,10 @@ bool TCPServer::start() {
         return false;
     }
 
-    std::thread([this]() {
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            server::CommandHandler::instance().runActiveExpiration();
-        }
-    }).detach();
+    // Register active expiration as a timer event (runs every 100ms)
+    event_loop_->addTimer(std::chrono::milliseconds(100), []() {
+        server::CommandHandler::instance().runActiveExpiration();
+    });
 
     // Run the event loop (this will block)
     event_loop_->run();

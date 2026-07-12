@@ -70,18 +70,36 @@ void EventLoop::run() {
             }
         }
         
+        // Before waiting, process timers to adjust timeout
+        int timeout_ms = 100;
+        {
+            std::lock_guard<std::mutex> lock(timers_mutex_);
+            if (!timers_.empty()) {
+                auto now = std::chrono::steady_clock::now();
+                auto next_exec = timers_[0].next_execution;
+                if (now >= next_exec) {
+                    timeout_ms = 0;
+                } else {
+                    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(next_exec - now).count();
+                    timeout_ms = std::min(timeout_ms, static_cast<int>(diff));
+                }
+            }
+        }
+        
         struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000; // 100ms timeout
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
         
         int activity = select(static_cast<int>(max_fd + 1), &read_fds, &write_fds, &error_fds, &tv);
         
         if (activity < 0) {
             LOG_ERROR("select error");
             break;
-        } else if (activity == 0) {
-            continue; // Timeout
         }
+        
+        processTimers();
+
+        if (activity == 0) continue; // Timeout
         
         std::vector<EventContext> current_events;
         {
@@ -104,7 +122,23 @@ void EventLoop::run() {
     struct epoll_event events[MAX_EVENTS];
 
     while (running_) {
-        int nfds = epoll_wait(epoll_fd_, events, MAX_EVENTS, 100);
+        // Before waiting, process timers to adjust timeout
+        int timeout_ms = 100;
+        {
+            std::lock_guard<std::mutex> lock(timers_mutex_);
+            if (!timers_.empty()) {
+                auto now = std::chrono::steady_clock::now();
+                auto next_exec = timers_[0].next_execution;
+                if (now >= next_exec) {
+                    timeout_ms = 0;
+                } else {
+                    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(next_exec - now).count();
+                    timeout_ms = std::min(timeout_ms, static_cast<int>(diff));
+                }
+            }
+        }
+
+        int nfds = epoll_wait(epoll_fd_, events, MAX_EVENTS, timeout_ms);
         
         if (nfds == -1) {
             if (errno == EINTR) continue;
@@ -112,9 +146,11 @@ void EventLoop::run() {
             break;
         }
         
+        processTimers();
+        
         for (int i = 0; i < nfds; ++i) {
             EventHandlerContext* ctx = static_cast<EventHandlerContext*>(events[i].data.ptr);
-            socket_t fd = 0; // In a full implementation, we'd map this back, but handler captures it typically
+            socket_t fd = ctx->fd; 
             
             if (events[i].events & EPOLLERR || events[i].events & EPOLLHUP) {
                 ctx->handler(fd, EventType::ERROR);
@@ -142,7 +178,7 @@ bool EventLoop::addEvent(socket_t fd, EventType type, EventHandler handler) {
     struct epoll_event event;
     event.events = (type == EventType::READ) ? EPOLLIN : EPOLLOUT;
     
-    EventHandlerContext* ctx = new EventHandlerContext{handler};
+    EventHandlerContext* ctx = new EventHandlerContext{fd, handler};
     event.data.ptr = ctx;
     handlers_.push_back(ctx); // simplistic memory management for milestone 1
     
@@ -178,3 +214,43 @@ bool EventLoop::removeEvent(socket_t fd) {
 
 } // namespace network
 } // namespace inferno
+
+void inferno::network::EventLoop::addTimer(std::chrono::milliseconds interval, TimerHandler handler) {
+    std::lock_guard<std::mutex> lock(timers_mutex_);
+    auto now = std::chrono::steady_clock::now();
+    timers_.push_back({now + interval, interval, handler});
+    // Sort so earliest execution is at the end (or beginning). Let's sort so earliest is at beginning.
+    std::sort(timers_.begin(), timers_.end(), [](const TimerEvent& a, const TimerEvent& b) {
+        return a.next_execution < b.next_execution;
+    });
+}
+
+void inferno::network::EventLoop::processTimers() {
+    std::vector<TimerEvent> to_execute;
+    {
+        std::lock_guard<std::mutex> lock(timers_mutex_);
+        auto now = std::chrono::steady_clock::now();
+        
+        while (!timers_.empty() && timers_.front().next_execution <= now) {
+            to_execute.push_back(timers_.front());
+            timers_.erase(timers_.begin());
+        }
+    }
+    
+    for (auto& timer : to_execute) {
+        timer.handler();
+        // Re-schedule
+        timer.next_execution = std::chrono::steady_clock::now() + timer.interval;
+        
+        std::lock_guard<std::mutex> lock(timers_mutex_);
+        timers_.push_back(timer);
+    }
+    
+    // Resort after re-scheduling
+    if (!to_execute.empty()) {
+        std::lock_guard<std::mutex> lock(timers_mutex_);
+        std::sort(timers_.begin(), timers_.end(), [](const TimerEvent& a, const TimerEvent& b) {
+            return a.next_execution < b.next_execution;
+        });
+    }
+}

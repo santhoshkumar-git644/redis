@@ -36,6 +36,10 @@ public:
     bool modifyEvent(socket_t fd, EventType type);
     bool removeEvent(socket_t fd);
 
+public:
+    using TimerHandler = std::function<void()>;
+    void addTimer(std::chrono::milliseconds interval, TimerHandler handler);
+
 private:
     std::atomic<bool> running_{false};
     
@@ -52,10 +56,21 @@ private:
     // Linux implementation using epoll
     int epoll_fd_{INVALID_SOCKET};
     struct EventHandlerContext {
+        socket_t fd;
         EventHandler handler;
     };
     std::vector<EventHandlerContext*> handlers_;
 #endif
+
+    struct TimerEvent {
+        std::chrono::steady_clock::time_point next_execution;
+        std::chrono::milliseconds interval;
+        TimerHandler handler;
+    };
+    std::vector<TimerEvent> timers_;
+    std::mutex timers_mutex_;
+
+    void processTimers();
 };
 
 } // namespace network
