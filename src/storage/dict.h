@@ -11,6 +11,13 @@
 namespace inferno {
 namespace storage {
 
+enum class EvictionPolicy {
+    NOEVICTION,
+    ALLKEYS_LRU,
+    ALLKEYS_LFU,
+    ALLKEYS_RANDOM
+};
+
 struct DictEntry {
     std::string key;
     InfernoObject::SharedPtr value;
@@ -41,6 +48,13 @@ public:
     bool removeExpire(const std::string& key);
     void activeExpireCheck();
 
+    // Eviction Policy
+    void setMaxKeys(size_t max_keys) { max_keys_ = max_keys; }
+    size_t getMaxKeys() const { return max_keys_; }
+    void setEvictionPolicy(EvictionPolicy policy) { eviction_policy_ = policy; }
+    EvictionPolicy getEvictionPolicy() const { return eviction_policy_; }
+    void performEviction();
+
     // Iterate read-only for persistence (RDB)
     void forEachReadOnly(const std::function<void(const std::string&, const InfernoObject::SharedPtr&, uint64_t)>& callback) const;
 
@@ -52,9 +66,11 @@ private:
 
     std::vector<DictEntry*> table_;
     std::vector<std::string> keys_with_ttl_; // For fast sampling
-    size_t size_;
-    
-    // For Milestone 3, we use a shared_mutex to allow concurrent reads and exclusive writes.
+    size_t size_{0};
+    size_t max_keys_{0}; // 0 means unlimited
+    EvictionPolicy eviction_policy_{EvictionPolicy::NOEVICTION};
+
+    void rehash();   // For Milestone 3, we use a shared_mutex to allow concurrent reads and exclusive writes.
     // In a fully single-threaded Redis clone, this isn't strictly necessary for the main loop,
     // but it prepares us for thread-pool based background tasks.
     mutable std::shared_mutex mutex_;

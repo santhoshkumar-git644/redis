@@ -2,6 +2,8 @@
 #include <functional>
 #include <chrono>
 #include <random>
+#include <iostream>
+#include <algorithm>
 
 namespace inferno {
 namespace storage {
@@ -43,8 +45,14 @@ size_t Dict::hashFunction(const std::string& key) const {
 }
 
 void Dict::set(const std::string& key, InfernoObject::SharedPtr value) {
+    if (max_keys_ > 0 && size_ >= max_keys_) {
+        performEviction();
+    }
+
     std::unique_lock<std::shared_mutex> lock(mutex_);
     
+    value->recordAccess();
+
     if (size_ >= table_.size() * LOAD_FACTOR_THRESHOLD) {
         resize();
     }
@@ -86,6 +94,7 @@ InfernoObject::SharedPtr Dict::get(const std::string& key) const {
                 const_cast<Dict*>(this)->del(key); // Call mutating del
                 return nullptr;
             }
+            entry->value->recordAccess();
             return entry->value;
         }
         entry = entry->next;
@@ -123,7 +132,7 @@ bool Dict::del(const std::string& key) {
 }
 
 bool Dict::exists(const std::string& key) const {
-    return get(key).has_value();
+    return get(key) != nullptr;
 }
 
 void Dict::resize() {
@@ -254,6 +263,54 @@ void Dict::forEachReadOnly(const std::function<void(const std::string&, const In
             callback(entry->key, entry->value, entry->expire_time_ms);
             entry = entry->next;
         }
+    }
+}
+
+void Dict::performEviction() {
+    if (eviction_policy_ == EvictionPolicy::NOEVICTION || size_ == 0) return;
+
+    std::string candidate_key;
+    
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
+        
+        int samples = 5;
+        DictEntry* best_candidate = nullptr;
+        uint64_t best_score = 0;
+        
+        static std::mt19937 rng(std::random_device{}());
+        std::uniform_int_distribution<size_t> dist(0, table_.size() - 1);
+        
+        for (int i = 0; i < 20 && samples > 0; ++i) { 
+            size_t idx = dist(rng);
+            DictEntry* entry = table_[idx];
+            if (entry) {
+                samples--;
+                
+                uint64_t score = 0;
+                if (eviction_policy_ == EvictionPolicy::ALLKEYS_LRU) {
+                    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                    score = now - entry->value->getLastAccessTime();
+                } else if (eviction_policy_ == EvictionPolicy::ALLKEYS_LFU) {
+                    score = UINT32_MAX - entry->value->getAccessCount();
+                } else if (eviction_policy_ == EvictionPolicy::ALLKEYS_RANDOM) {
+                    score = rng();
+                }
+                
+                if (!best_candidate || score > best_score) {
+                    best_candidate = entry;
+                    best_score = score;
+                }
+            }
+        }
+        
+        if (best_candidate) {
+            candidate_key = best_candidate->key;
+        }
+    }
+    
+    if (!candidate_key.empty()) {
+        remove(candidate_key); // remove() takes its own unique_lock
     }
 }
 

@@ -1,8 +1,19 @@
 #include "value.h"
 #include <charconv>
+#include <chrono>
 
 namespace inferno {
 namespace storage {
+
+void InfernoObject::recordAccess() {
+    last_access_time_ms_ = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    
+    // Simple LFU counter (could implement logarithmic decay later)
+    if (access_count_ < UINT32_MAX) {
+        access_count_++;
+    }
+}
 
 std::vector<InfernoObject::SharedPtr> SharedObjects::shared_integers_;
 

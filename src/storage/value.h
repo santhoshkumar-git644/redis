@@ -54,6 +54,11 @@ public:
     ObjectType getType() const { return type_; }
     ObjectEncoding getEncoding() const { return encoding_; }
     
+    // LRU / LFU tracking
+    uint64_t getLastAccessTime() const { return last_access_time_ms_; }
+    uint32_t getAccessCount() const { return access_count_; }
+    void recordAccess();
+
     std::string toString() const;
     bool getInt(int64_t& out) const;
     
@@ -95,6 +100,9 @@ private:
 
     ObjectType type_;
     ObjectEncoding encoding_;
+    
+    uint64_t last_access_time_ms_{0};
+    uint32_t access_count_{0};
     std::variant<std::string, int64_t, std::deque<std::string>, 
                  std::unordered_set<std::string>, std::unordered_map<std::string, std::string>,
                  std::shared_ptr<ZSet>> value_;
