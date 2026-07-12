@@ -45,6 +45,14 @@ private:
     protocol::RESPObject cmdTTL(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdPTTL(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdPersist(const std::shared_ptr<protocol::RESPArray>& array);
+    
+    // List commands
+    protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdRPush(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdLPop(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdRPop(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdLRange(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdLLen(const std::shared_ptr<protocol::RESPArray>& array);
 
     // Helper to extract string from RESPObject
     std::string extractString(const protocol::RESPObject& obj);

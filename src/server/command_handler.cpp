@@ -52,6 +52,12 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "TTL") return cmdTTL(array);
     if (cmd_name == "PTTL") return cmdPTTL(array);
     if (cmd_name == "PERSIST") return cmdPersist(array);
+    if (cmd_name == "LPUSH") return cmdLPush(array);
+    if (cmd_name == "RPUSH") return cmdRPush(array);
+    if (cmd_name == "LPOP") return cmdLPop(array);
+    if (cmd_name == "RPOP") return cmdRPop(array);
+    if (cmd_name == "LRANGE") return cmdLRange(array);
+    if (cmd_name == "LLEN") return cmdLLen(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -298,6 +304,157 @@ protocol::RESPObject CommandHandler::cmdPersist(const std::shared_ptr<protocol::
         return protocol::RESPInteger(1);
     }
     return protocol::RESPInteger(0);
+}
+
+protocol::RESPObject CommandHandler::cmdLPush(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'lpush' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) {
+        opt_val = storage::InfernoObject::createList();
+        dict_.set(key, opt_val);
+    } else if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& list = opt_val->getList();
+    for (size_t i = 2; i < array->elements.size(); ++i) {
+        list.push_front(extractString(array->elements[i]));
+    }
+    
+    return protocol::RESPInteger(list.size());
+}
+
+protocol::RESPObject CommandHandler::cmdRPush(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'rpush' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) {
+        opt_val = storage::InfernoObject::createList();
+        dict_.set(key, opt_val);
+    } else if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& list = opt_val->getList();
+    for (size_t i = 2; i < array->elements.size(); ++i) {
+        list.push_back(extractString(array->elements[i]));
+    }
+    
+    return protocol::RESPInteger(list.size());
+}
+
+protocol::RESPObject CommandHandler::cmdLPop(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'lpop' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPNull();
+    if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& list = opt_val->getList();
+    if (list.empty()) return protocol::RESPNull();
+    
+    std::string val = std::move(list.front());
+    list.pop_front();
+    
+    if (list.empty()) {
+        dict_.del(key);
+    }
+    
+    return protocol::RESPBulkString(val);
+}
+
+protocol::RESPObject CommandHandler::cmdRPop(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'rpop' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPNull();
+    if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& list = opt_val->getList();
+    if (list.empty()) return protocol::RESPNull();
+    
+    std::string val = std::move(list.back());
+    list.pop_back();
+    
+    if (list.empty()) {
+        dict_.del(key);
+    }
+    
+    return protocol::RESPBulkString(val);
+}
+
+protocol::RESPObject CommandHandler::cmdLLen(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'llen' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPInteger(0);
+    if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    return protocol::RESPInteger(opt_val->getList().size());
+}
+
+protocol::RESPObject CommandHandler::cmdLRange(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 4) {
+        return protocol::RESPError("ERR wrong number of arguments for 'lrange' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    int64_t start, end;
+    auto str_start = extractString(array->elements[2]);
+    auto str_end = extractString(array->elements[3]);
+    
+    if (std::from_chars(str_start.data(), str_start.data() + str_start.size(), start).ec != std::errc() ||
+        std::from_chars(str_end.data(), str_end.data() + str_end.size(), end).ec != std::errc()) {
+        return protocol::RESPError("ERR value is not an integer or out of range");
+    }
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return std::make_shared<protocol::RESPArray>();
+    if (opt_val->getType() != storage::ObjectType::LIST) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    const auto& list = opt_val->getList();
+    int64_t len = list.size();
+    
+    if (start < 0) start = len + start;
+    if (end < 0) end = len + end;
+    if (start < 0) start = 0;
+    if (start > end || start >= len) {
+        return std::make_shared<protocol::RESPArray>();
+    }
+    if (end >= len) end = len - 1;
+    
+    auto result = std::make_shared<protocol::RESPArray>();
+    auto it = list.begin();
+    std::advance(it, start);
+    for (int64_t i = start; i <= end; ++i, ++it) {
+        result->elements.push_back(protocol::RESPBulkString(*it));
+    }
+    
+    return result;
 }
 
 } // namespace server
