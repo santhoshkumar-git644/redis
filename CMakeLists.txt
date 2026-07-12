@@ -61,6 +61,7 @@ add_executable(
   tests/expiration_test.cpp
   tests/list_test.cpp
   tests/set_hash_test.cpp
+  tests/zset_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
