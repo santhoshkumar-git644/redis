@@ -22,6 +22,10 @@ public:
     // Get the global storage dictionary (mainly for testing)
     storage::Dict& getDict() { return dict_; }
 
+    void runActiveExpiration() {
+        dict_.activeExpireCheck();
+    }
+
 private:
     CommandHandler() = default;
 

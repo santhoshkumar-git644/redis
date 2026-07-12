@@ -3,6 +3,9 @@
 #include "../server/command_handler.h"
 #include <vector>
 #include <functional>
+#include <thread>
+#include <chrono>
+#include <atomic>
 
 namespace inferno {
 namespace network {
@@ -52,6 +55,13 @@ bool TCPServer::start() {
         LOG_ERROR("Failed to add acceptor socket to event loop");
         return false;
     }
+
+    std::thread([this]() {
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            server::CommandHandler::instance().runActiveExpiration();
+        }
+    }).detach();
 
     // Run the event loop (this will block)
     event_loop_->run();
