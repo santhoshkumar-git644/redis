@@ -96,5 +96,12 @@ if(WIN32)
     target_link_libraries(inferno-tests ws2_32)
 endif()
 
+# Benchmark Tool
+add_executable(inferno_benchmark tools/benchmark.cpp)
+if(WIN32)
+    target_link_libraries(inferno_benchmark PRIVATE ws2_32)
+endif()
+target_link_libraries(inferno_benchmark PRIVATE Threads::Threads)
+
 include(GoogleTest)
 gtest_discover_tests(inferno-tests)
