@@ -13,10 +13,10 @@ namespace storage {
 
 struct DictEntry {
     std::string key;
-    InfernoObject value;
+    InfernoObject::SharedPtr value;
     DictEntry* next;
 
-    DictEntry(std::string k, InfernoObject v) 
+    DictEntry(std::string k, InfernoObject::SharedPtr v) 
         : key(std::move(k)), value(std::move(v)), next(nullptr) {}
 };
 
@@ -29,8 +29,8 @@ public:
     Dict(const Dict&) = delete;
     Dict& operator=(const Dict&) = delete;
 
-    void set(const std::string& key, InfernoObject value);
-    std::optional<InfernoObject> get(const std::string& key) const;
+    void set(const std::string& key, InfernoObject::SharedPtr value);
+    InfernoObject::SharedPtr get(const std::string& key) const;
     bool del(const std::string& key);
     bool exists(const std::string& key) const;
 

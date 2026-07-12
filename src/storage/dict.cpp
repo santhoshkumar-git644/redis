@@ -23,7 +23,7 @@ size_t Dict::hashFunction(const std::string& key) const {
     return std::hash<std::string>{}(key);
 }
 
-void Dict::set(const std::string& key, InfernoObject value) {
+void Dict::set(const std::string& key, InfernoObject::SharedPtr value) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     
     if (size_ >= table_.size() * LOAD_FACTOR_THRESHOLD) {
@@ -48,7 +48,7 @@ void Dict::set(const std::string& key, InfernoObject value) {
     size_++;
 }
 
-std::optional<InfernoObject> Dict::get(const std::string& key) const {
+InfernoObject::SharedPtr Dict::get(const std::string& key) const {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     
     size_t index = hashFunction(key) % table_.size();
@@ -61,7 +61,7 @@ std::optional<InfernoObject> Dict::get(const std::string& key) const {
         entry = entry->next;
     }
     
-    return std::nullopt;
+    return nullptr;
 }
 
 bool Dict::del(const std::string& key) {

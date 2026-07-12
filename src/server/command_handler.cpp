@@ -71,7 +71,7 @@ protocol::RESPObject CommandHandler::cmdSet(const std::shared_ptr<protocol::RESP
     std::string key = extractString(array->elements[1]);
     std::string val = extractString(array->elements[2]);
     
-    dict_.set(key, storage::InfernoObject(std::move(val)));
+    dict_.set(key, storage::InfernoObject::create(std::move(val)));
     return protocol::RESPSimpleString("OK");
 }
 
@@ -121,7 +121,7 @@ protocol::RESPObject CommandHandler::cmdMSet(const std::shared_ptr<protocol::RES
     for (size_t i = 1; i < array->elements.size(); i += 2) {
         std::string key = extractString(array->elements[i]);
         std::string val = extractString(array->elements[i+1]);
-        dict_.set(key, storage::InfernoObject(std::move(val)));
+        dict_.set(key, storage::InfernoObject::create(std::move(val)));
     }
     return protocol::RESPSimpleString("OK");
 }
@@ -157,7 +157,7 @@ protocol::RESPObject CommandHandler::cmdIncr(const std::shared_ptr<protocol::RES
         }
     }
     val++;
-    dict_.set(key, storage::InfernoObject(val));
+    dict_.set(key, storage::InfernoObject::create(val));
     return protocol::RESPInteger(val);
 }
 
@@ -175,7 +175,7 @@ protocol::RESPObject CommandHandler::cmdDecr(const std::shared_ptr<protocol::RES
         }
     }
     val--;
-    dict_.set(key, storage::InfernoObject(val));
+    dict_.set(key, storage::InfernoObject::create(val));
     return protocol::RESPInteger(val);
 }
 

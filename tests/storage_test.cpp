@@ -8,15 +8,15 @@ using namespace inferno::server;
 
 TEST(DictTest, SetAndGet) {
     Dict dict;
-    dict.set("key1", InfernoObject("value1"));
-    dict.set("key2", InfernoObject(100));
+    dict.set("key1", InfernoObject::create("value1"));
+    dict.set("key2", InfernoObject::create(100));
 
     auto val1 = dict.get("key1");
-    EXPECT_TRUE(val1.has_value());
+    EXPECT_TRUE(val1 != nullptr);
     EXPECT_EQ(val1->toString(), "value1");
 
     auto val2 = dict.get("key2");
-    EXPECT_TRUE(val2.has_value());
+    EXPECT_TRUE(val2 != nullptr);
     int64_t int_val = 0;
     EXPECT_TRUE(val2->getInt(int_val));
     EXPECT_EQ(int_val, 100);
@@ -24,7 +24,7 @@ TEST(DictTest, SetAndGet) {
 
 TEST(DictTest, DeleteAndExists) {
     Dict dict;
-    dict.set("key1", InfernoObject("value1"));
+    dict.set("key1", InfernoObject::create("value1"));
     EXPECT_TRUE(dict.exists("key1"));
     
     EXPECT_TRUE(dict.del("key1"));
@@ -36,14 +36,14 @@ TEST(DictTest, ResizeAndCollisions) {
     Dict dict;
     // Insert many elements to trigger resize
     for (int i = 0; i < 100; ++i) {
-        dict.set("key" + std::to_string(i), InfernoObject(i));
+        dict.set("key" + std::to_string(i), InfernoObject::create(i));
     }
     
     EXPECT_EQ(dict.size(), 100);
     
     for (int i = 0; i < 100; ++i) {
         auto val = dict.get("key" + std::to_string(i));
-        EXPECT_TRUE(val.has_value());
+        EXPECT_TRUE(val != nullptr);
         int64_t int_val = 0;
         EXPECT_TRUE(val->getInt(int_val));
         EXPECT_EQ(int_val, i);

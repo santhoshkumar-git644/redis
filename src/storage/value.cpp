@@ -4,6 +4,50 @@
 namespace inferno {
 namespace storage {
 
+std::vector<InfernoObject::SharedPtr> SharedObjects::shared_integers_;
+
+void SharedObjects::initialize() {
+    // Pre-allocate integers from 0 to 9999 to mimic Redis shared.integers
+    shared_integers_.reserve(10000);
+    for (int64_t i = 0; i < 10000; ++i) {
+        // Create bypassing the pool to avoid recursion
+        shared_integers_.push_back(std::shared_ptr<InfernoObject>(new InfernoObject(i)));
+    }
+}
+
+InfernoObject::SharedPtr SharedObjects::getInteger(int64_t val) {
+    if (val >= 0 && val < 10000) {
+        return shared_integers_[val];
+    }
+    return nullptr;
+}
+
+InfernoObject::InfernoObject(std::string str) 
+    : type_(ObjectType::STRING), encoding_(ObjectEncoding::RAW), value_(std::move(str)) {
+    try_encode_int();
+}
+
+InfernoObject::InfernoObject(int64_t val)
+    : type_(ObjectType::STRING), encoding_(ObjectEncoding::INT), value_(val) {}
+
+InfernoObject::SharedPtr InfernoObject::create(std::string str) {
+    // We can check if it parses as an int first, and if so, check the shared pool
+    int64_t val;
+    auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
+    if (ec == std::errc() && ptr == str.data() + str.size()) {
+        auto shared = SharedObjects::getInteger(val);
+        if (shared) return shared;
+        return std::shared_ptr<InfernoObject>(new InfernoObject(val));
+    }
+    return std::shared_ptr<InfernoObject>(new InfernoObject(std::move(str)));
+}
+
+InfernoObject::SharedPtr InfernoObject::create(int64_t val) {
+    auto shared = SharedObjects::getInteger(val);
+    if (shared) return shared;
+    return std::shared_ptr<InfernoObject>(new InfernoObject(val));
+}
+
 void InfernoObject::try_encode_int() {
     if (encoding_ != ObjectEncoding::RAW) return;
     
@@ -13,7 +57,6 @@ void InfernoObject::try_encode_int() {
     int64_t val;
     auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
     if (ec == std::errc() && ptr == str.data() + str.size()) {
-        // Successfully parsed the entire string as an integer
         encoding_ = ObjectEncoding::INT;
         value_ = val;
     }
