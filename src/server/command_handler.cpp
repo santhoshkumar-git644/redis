@@ -16,6 +16,16 @@ namespace server {
 void CommandHandler::handleClientDisconnect(network::socket_t client_fd) {
     in_transaction_.erase(client_fd);
     transaction_queues_.erase(client_fd);
+    cmdUnwatch(client_fd);
+}
+
+void CommandHandler::markKeyDirty(const std::string& key) {
+    auto it = key_watchers_.find(key);
+    if (it != key_watchers_.end()) {
+        for (network::socket_t fd : it->second) {
+            dirty_clients_.insert(fd);
+        }
+    }
 }
 
 std::string CommandHandler::extractString(const protocol::RESPObject& obj) {
@@ -46,7 +56,7 @@ std::optional<protocol::RESPObject> CommandHandler::handleCommand(const protocol
 
     // Transaction queuing interception
     if (in_transaction_.count(client_fd) > 0 && client_fd != 0) {
-        if (cmd_name != "MULTI" && cmd_name != "EXEC" && cmd_name != "DISCARD" && cmd_name != "QUIT") {
+        if (cmd_name != "MULTI" && cmd_name != "EXEC" && cmd_name != "DISCARD" && cmd_name != "QUIT" && cmd_name != "WATCH" && cmd_name != "UNWATCH") {
             transaction_queues_[client_fd].push_back(array);
             return protocol::RESPSimpleString("QUEUED");
         }
@@ -59,6 +69,16 @@ std::optional<protocol::RESPObject> CommandHandler::handleCommand(const protocol
         response = cmdSubscribe(array, client_fd);
     } else if (cmd_name == "UNSUBSCRIBE") {
         response = cmdUnsubscribe(array, client_fd);
+    } else if (cmd_name == "MULTI") {
+        response = cmdMulti(client_fd);
+    } else if (cmd_name == "EXEC") {
+        response = cmdExec(client_fd);
+    } else if (cmd_name == "DISCARD") {
+        response = cmdDiscard(client_fd);
+    } else if (cmd_name == "WATCH") {
+        response = cmdWatch(array, client_fd);
+    } else if (cmd_name == "UNWATCH") {
+        response = cmdUnwatch(client_fd);
     } else {
         response = dispatchCommand(cmd_name, array);
     }
@@ -99,9 +119,6 @@ protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name
     if (cmd_name == "BGSAVE") return cmdBgSave(array);
     if (cmd_name == "CONFIG") return cmdConfig(array);
     if (cmd_name == "PUBLISH") return cmdPublish(array);
-    if (cmd_name == "MULTI") return cmdMulti(array);
-    if (cmd_name == "EXEC") return cmdExec(array);
-    if (cmd_name == "DISCARD") return cmdDiscard(array);
     if (cmd_name == "LPUSH") return cmdLPush(array);
     if (cmd_name == "RPUSH") return cmdRPush(array);
     if (cmd_name == "LPOP") return cmdLPop(array);
@@ -537,6 +554,14 @@ protocol::RESPObject CommandHandler::cmdExec(network::socket_t client_fd) {
         return protocol::RESPError("ERR EXEC without MULTI");
     }
     
+    // Check for dirty keys (Optimistic Locking failure)
+    if (dirty_clients_.count(client_fd) > 0) {
+        in_transaction_.erase(client_fd);
+        transaction_queues_.erase(client_fd);
+        cmdUnwatch(client_fd); // Automatic unwatch
+        return protocol::RESPNull(); // Redis returns null array on CAS failure
+    }
+    
     auto& queue = transaction_queues_[client_fd];
     auto result = std::make_shared<protocol::RESPArray>();
     
@@ -555,6 +580,7 @@ protocol::RESPObject CommandHandler::cmdExec(network::socket_t client_fd) {
     
     in_transaction_.erase(client_fd);
     transaction_queues_.erase(client_fd);
+    cmdUnwatch(client_fd); // Automatic unwatch
     
     return result;
 }
@@ -567,6 +593,43 @@ protocol::RESPObject CommandHandler::cmdDiscard(network::socket_t client_fd) {
     
     in_transaction_.erase(client_fd);
     transaction_queues_.erase(client_fd);
+    cmdUnwatch(client_fd); // Automatic unwatch
+    
+    return protocol::RESPSimpleString("OK");
+}
+
+protocol::RESPObject CommandHandler::cmdWatch(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd) {
+    if (client_fd == 0) return protocol::RESPError("ERR client socket required");
+    if (array->elements.size() < 2) return protocol::RESPError("ERR wrong number of arguments for 'watch' command");
+    if (in_transaction_.count(client_fd) > 0) return protocol::RESPError("ERR WATCH inside MULTI is not allowed");
+    
+    for (size_t i = 1; i < array->elements.size(); ++i) {
+        std::string key = extractString(array->elements[i]);
+        watched_keys_[client_fd].insert(key);
+        key_watchers_[key].insert(client_fd);
+    }
+    
+    return protocol::RESPSimpleString("OK");
+}
+
+protocol::RESPObject CommandHandler::cmdUnwatch(network::socket_t client_fd) {
+    if (client_fd == 0) return protocol::RESPError("ERR client socket required");
+    
+    auto it = watched_keys_.find(client_fd);
+    if (it != watched_keys_.end()) {
+        for (const std::string& key : it->second) {
+            auto watcher_it = key_watchers_.find(key);
+            if (watcher_it != key_watchers_.end()) {
+                watcher_it->second.erase(client_fd);
+                if (watcher_it->second.empty()) {
+                    key_watchers_.erase(watcher_it);
+                }
+            }
+        }
+        watched_keys_.erase(it);
+    }
+    
+    dirty_clients_.erase(client_fd);
     return protocol::RESPSimpleString("OK");
 }
 

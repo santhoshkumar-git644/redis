@@ -68,6 +68,9 @@ void Dict::set(const std::string& key, InfernoObject::SharedPtr value) {
                 entry->expire_time_ms = 0;
                 removeKeyFromTTL(keys_with_ttl_, key);
             }
+            if (on_key_modified_) {
+                on_key_modified_(key);
+            }
             return;
         }
         entry = entry->next;
@@ -78,6 +81,10 @@ void Dict::set(const std::string& key, InfernoObject::SharedPtr value) {
     new_entry->next = table_[index];
     table_[index] = new_entry;
     size_++;
+
+    if (on_key_modified_) {
+        on_key_modified_(key);
+    }
 }
 
 InfernoObject::SharedPtr Dict::get(const std::string& key) const {
@@ -109,6 +116,7 @@ bool Dict::del(const std::string& key) {
     size_t index = hashFunction(key) % table_.size();
     DictEntry* entry = table_[index];
     DictEntry* prev = nullptr;
+    bool removed = false;
     
     while (entry) {
         if (entry->key == key) {
@@ -122,13 +130,18 @@ bool Dict::del(const std::string& key) {
             }
             delete entry;
             size_--;
-            return true;
+            removed = true;
+            break;
         }
         prev = entry;
         entry = entry->next;
     }
     
-    return false;
+    if (removed && on_key_modified_) {
+        on_key_modified_(key);
+    }
+    
+    return removed;
 }
 
 bool Dict::exists(const std::string& key) const {

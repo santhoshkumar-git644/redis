@@ -18,11 +18,20 @@ public:
         return handler;
     }
 
+    CommandHandler() {
+        dict_.setKeyModifiedCallback([this](const std::string& key) {
+            this->markKeyDirty(key);
+        });
+    }
+
     // Process a parsed RESP command and return the response (if any)
     std::optional<protocol::RESPObject> handleCommand(const protocol::RESPObject& command, network::socket_t client_fd = 0);
 
     // Clean up state when a client disconnects
     void handleClientDisconnect(network::socket_t client_fd);
+
+    // Watch mechanics (Optimistic Locking)
+    void markKeyDirty(const std::string& key);
 
     // Get the global storage dictionary (mainly for testing)
     storage::Dict& getDict() { return dict_; }
@@ -70,6 +79,8 @@ private:
     protocol::RESPObject cmdMulti(network::socket_t client_fd);
     protocol::RESPObject cmdExec(network::socket_t client_fd);
     protocol::RESPObject cmdDiscard(network::socket_t client_fd);
+    protocol::RESPObject cmdWatch(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd);
+    protocol::RESPObject cmdUnwatch(network::socket_t client_fd);
     
     // List commands
     protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);
@@ -105,6 +116,11 @@ private:
     // Transaction state
     std::unordered_set<network::socket_t> in_transaction_;
     std::unordered_map<network::socket_t, std::vector<std::shared_ptr<protocol::RESPArray>>> transaction_queues_;
+    
+    // Watch state
+    std::unordered_map<network::socket_t, std::unordered_set<std::string>> watched_keys_;
+    std::unordered_map<std::string, std::unordered_set<network::socket_t>> key_watchers_;
+    std::unordered_set<network::socket_t> dirty_clients_;
 };
 
 } // namespace server

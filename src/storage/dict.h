@@ -55,6 +55,10 @@ public:
     EvictionPolicy getEvictionPolicy() const { return eviction_policy_; }
     void performEviction();
 
+    // Key modification callback for WATCH (Optimistic Locking)
+    using KeyModifiedCallback = std::function<void(const std::string&)>;
+    void setKeyModifiedCallback(KeyModifiedCallback cb) { on_key_modified_ = cb; }
+
     // Iterate read-only for persistence (RDB)
     void forEachReadOnly(const std::function<void(const std::string&, const InfernoObject::SharedPtr&, uint64_t)>& callback) const;
 
@@ -74,6 +78,8 @@ private:
     // In a fully single-threaded Redis clone, this isn't strictly necessary for the main loop,
     // but it prepares us for thread-pool based background tasks.
     mutable std::shared_mutex mutex_;
+    
+    KeyModifiedCallback on_key_modified_;
     
     static constexpr size_t INITIAL_CAPACITY = 16;
     static constexpr float LOAD_FACTOR_THRESHOLD = 0.75f;
