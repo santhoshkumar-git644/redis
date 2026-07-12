@@ -2,6 +2,7 @@
 #include "../utils/logger.h"
 #include "../server/command_handler.h"
 #include "../persistence/aof.h"
+#include "../persistence/rdb.h"
 #include <vector>
 #include <functional>
 #include <thread>
@@ -52,6 +53,9 @@ bool TCPServer::start() {
         this->handleNewConnection(fd, type);
     };
 
+    // Load RDB snapshot
+    persistence::RDBManager::instance().load(server::CommandHandler::instance().getDict());
+    
     // Load AOF before accepting any connections
     persistence::AOFManager::instance().load();
     // Start AOF persistence thread

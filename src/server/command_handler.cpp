@@ -2,6 +2,7 @@
 #include "../utils/logger.h"
 #include "../memory/allocator.h"
 #include "../persistence/aof.h"
+#include "../persistence/rdb.h"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -69,6 +70,8 @@ protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name
     if (cmd_name == "TTL") return cmdTTL(array);
     if (cmd_name == "PTTL") return cmdPTTL(array);
     if (cmd_name == "PERSIST") return cmdPersist(array);
+    if (cmd_name == "SAVE") return cmdSave(array);
+    if (cmd_name == "BGSAVE") return cmdBgSave(array);
     if (cmd_name == "LPUSH") return cmdLPush(array);
     if (cmd_name == "RPUSH") return cmdRPush(array);
     if (cmd_name == "LPOP") return cmdLPop(array);
@@ -341,6 +344,34 @@ protocol::RESPObject CommandHandler::cmdPersist(const std::shared_ptr<protocol::
         return protocol::RESPInteger(1);
     }
     return protocol::RESPInteger(0);
+}
+
+protocol::RESPObject CommandHandler::cmdSave(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 1) {
+        return protocol::RESPError("ERR wrong number of arguments for 'save' command");
+    }
+    
+    if (persistence::RDBManager::instance().save(dict_)) {
+        return protocol::RESPSimpleString("OK");
+    } else {
+        return protocol::RESPError("ERR Background save failed");
+    }
+}
+
+protocol::RESPObject CommandHandler::cmdBgSave(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 1) {
+        return protocol::RESPError("ERR wrong number of arguments for 'bgsave' command");
+    }
+    
+    if (persistence::RDBManager::instance().isBgsaveInProgress()) {
+        return protocol::RESPError("ERR Background save already in progress");
+    }
+    
+    if (persistence::RDBManager::instance().bgsave(dict_)) {
+        return protocol::RESPSimpleString("Background saving started");
+    } else {
+        return protocol::RESPError("ERR Background save failed");
+    }
 }
 
 protocol::RESPObject CommandHandler::cmdLPush(const std::shared_ptr<protocol::RESPArray>& array) {

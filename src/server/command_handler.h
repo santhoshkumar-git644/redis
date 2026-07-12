@@ -49,6 +49,10 @@ private:
     protocol::RESPObject cmdPTTL(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdPersist(const std::shared_ptr<protocol::RESPArray>& array);
     
+    // Persistence commands
+    protocol::RESPObject cmdSave(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdBgSave(const std::shared_ptr<protocol::RESPArray>& array);
+    
     // List commands
     protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdRPush(const std::shared_ptr<protocol::RESPArray>& array);
