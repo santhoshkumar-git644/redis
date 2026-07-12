@@ -62,6 +62,10 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "SREM") return cmdSRem(array);
     if (cmd_name == "SMEMBERS") return cmdSMembers(array);
     if (cmd_name == "SISMEMBER") return cmdSIsMember(array);
+    if (cmd_name == "HSET") return cmdHSet(array);
+    if (cmd_name == "HGET") return cmdHGet(array);
+    if (cmd_name == "HDEL") return cmdHDel(array);
+    if (cmd_name == "HGETALL") return cmdHGetAll(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -550,6 +554,102 @@ protocol::RESPObject CommandHandler::cmdSIsMember(const std::shared_ptr<protocol
         return protocol::RESPInteger(1);
     }
     return protocol::RESPInteger(0);
+}
+
+protocol::RESPObject CommandHandler::cmdHSet(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 4 || array->elements.size() % 2 != 0) {
+        return protocol::RESPError("ERR wrong number of arguments for 'hset' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) {
+        opt_val = storage::InfernoObject::createHash();
+        dict_.set(key, opt_val);
+    } else if (opt_val->getType() != storage::ObjectType::HASH) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& hash = opt_val->getHash();
+    int added = 0;
+    for (size_t i = 2; i < array->elements.size(); i += 2) {
+        std::string field = extractString(array->elements[i]);
+        std::string val = extractString(array->elements[i+1]);
+        if (hash.insert_or_assign(field, val).second) {
+            added++;
+        }
+    }
+    
+    return protocol::RESPInteger(added);
+}
+
+protocol::RESPObject CommandHandler::cmdHGet(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'hget' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    std::string field = extractString(array->elements[2]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPNull();
+    if (opt_val->getType() != storage::ObjectType::HASH) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& hash = opt_val->getHash();
+    auto it = hash.find(field);
+    if (it != hash.end()) {
+        return protocol::RESPBulkString(it->second);
+    }
+    return protocol::RESPNull();
+}
+
+protocol::RESPObject CommandHandler::cmdHDel(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'hdel' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPInteger(0);
+    if (opt_val->getType() != storage::ObjectType::HASH) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& hash = opt_val->getHash();
+    int removed = 0;
+    for (size_t i = 2; i < array->elements.size(); ++i) {
+        if (hash.erase(extractString(array->elements[i]))) {
+            removed++;
+        }
+    }
+    
+    if (hash.empty()) {
+        dict_.del(key);
+    }
+    
+    return protocol::RESPInteger(removed);
+}
+
+protocol::RESPObject CommandHandler::cmdHGetAll(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'hgetall' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return std::make_shared<protocol::RESPArray>();
+    if (opt_val->getType() != storage::ObjectType::HASH) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto result = std::make_shared<protocol::RESPArray>();
+    for (const auto& [field, value] : opt_val->getHash()) {
+        result->elements.push_back(protocol::RESPBulkString(field));
+        result->elements.push_back(protocol::RESPBulkString(value));
+    }
+    
+    return result;
 }
 
 } // namespace server

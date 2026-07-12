@@ -59,6 +59,12 @@ private:
     protocol::RESPObject cmdSRem(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdSMembers(const std::shared_ptr<protocol::RESPArray>& array);
     protocol::RESPObject cmdSIsMember(const std::shared_ptr<protocol::RESPArray>& array);
+    
+    // Hash commands
+    protocol::RESPObject cmdHSet(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdHGet(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdHDel(const std::shared_ptr<protocol::RESPArray>& array);
+    protocol::RESPObject cmdHGetAll(const std::shared_ptr<protocol::RESPArray>& array);
 
     // Helper to extract string from RESPObject
     std::string extractString(const protocol::RESPObject& obj);
