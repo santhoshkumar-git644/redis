@@ -3,6 +3,7 @@
 #include "../memory/allocator.h"
 #include "../persistence/aof.h"
 #include "../persistence/rdb.h"
+#include "pubsub.h"
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -21,7 +22,7 @@ std::string CommandHandler::extractString(const protocol::RESPObject& obj) {
     return "";
 }
 
-protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& command) {
+std::optional<protocol::RESPObject> CommandHandler::handleCommand(const protocol::RESPObject& command, network::socket_t client_fd) {
     if (!std::holds_alternative<std::shared_ptr<protocol::RESPArray>>(command)) {
         return protocol::RESPError("ERR Protocol error: expected array");
     }
@@ -40,16 +41,29 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     std::transform(cmd_name.begin(), cmd_name.end(), cmd_name.begin(),
                    [](unsigned char c){ return std::toupper(c); });
 
-    protocol::RESPObject result = dispatchCommand(cmd_name, array);
+    // Dispatch command
+    std::optional<protocol::RESPObject> response;
     
-    // Only append to AOF if the command succeeded and it is a mutating command
-    if (!std::holds_alternative<protocol::RESPError>(result)) {
+    if (cmd_name == "SUBSCRIBE") {
+        response = cmdSubscribe(array, client_fd);
+    } else if (cmd_name == "UNSUBSCRIBE") {
+        response = cmdUnsubscribe(array, client_fd);
+    } else {
+        response = dispatchCommand(cmd_name, array);
+    }
+
+    if (!response) {
+        return std::nullopt; // No immediate reply (PubSub handled it)
+    }
+
+    // Persist if necessary append to AOF if the command succeeded and it is a mutating command
+    if (!std::holds_alternative<protocol::RESPError>(*response)) {
         if (isMutatingCommand(cmd_name)) {
             persistence::AOFManager::instance().append(array);
         }
     }
     
-    return result;
+    return *response;
 }
 
 protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name, const std::shared_ptr<protocol::RESPArray>& array) {
@@ -73,6 +87,7 @@ protocol::RESPObject CommandHandler::dispatchCommand(const std::string& cmd_name
     if (cmd_name == "SAVE") return cmdSave(array);
     if (cmd_name == "BGSAVE") return cmdBgSave(array);
     if (cmd_name == "CONFIG") return cmdConfig(array);
+    if (cmd_name == "PUBLISH") return cmdPublish(array);
     if (cmd_name == "LPUSH") return cmdLPush(array);
     if (cmd_name == "RPUSH") return cmdRPush(array);
     if (cmd_name == "LPOP") return cmdLPop(array);
@@ -196,6 +211,7 @@ protocol::RESPObject CommandHandler::cmdMGet(const std::shared_ptr<protocol::RES
             result->elements.push_back(protocol::RESPNull());
         }
     }
+
     return result;
 }
 
@@ -431,6 +447,64 @@ protocol::RESPObject CommandHandler::cmdConfig(const std::shared_ptr<protocol::R
     }
     
     return protocol::RESPError("ERR unknown CONFIG subcommand");
+}
+
+protocol::RESPObject CommandHandler::cmdPublish(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'publish' command");
+    }
+    
+    std::string channel = extractString(array->elements[1]);
+    std::string message = extractString(array->elements[2]);
+    
+    int receivers = PubSubManager::instance().publish(channel, message);
+    return protocol::RESPInteger(receivers);
+}
+
+std::optional<protocol::RESPObject> CommandHandler::cmdSubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd) {
+    if (array->elements.size() < 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'subscribe' command");
+    }
+    
+    if (client_fd == 0) {
+        return protocol::RESPError("ERR client socket required for subscribe");
+    }
+    
+    for (size_t i = 1; i < array->elements.size(); ++i) {
+        std::string channel = extractString(array->elements[i]);
+        int total_subs = PubSubManager::instance().subscribe(client_fd, channel);
+        
+        // Push response: *3\r\n$9\r\nsubscribe\r\n$<len>\r\n<channel>\r\n:<total_subs>\r\n
+        std::string resp = "*3\r\n$9\r\nsubscribe\r\n$" + std::to_string(channel.length()) + "\r\n" + channel + "\r\n:" + std::to_string(total_subs) + "\r\n";
+        PubSubManager::instance().sendToClient(client_fd, resp);
+    }
+    
+    return std::nullopt; // Sent directly via PubSubManager
+}
+
+std::optional<protocol::RESPObject> CommandHandler::cmdUnsubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd) {
+    if (client_fd == 0) {
+        return protocol::RESPError("ERR client socket required for unsubscribe");
+    }
+    
+    if (array->elements.size() == 1) {
+        // Unsubscribe all
+        PubSubManager::instance().unsubscribeAll(client_fd);
+        // Note: Real Redis lists all channels you unsubscribed from here. 
+        // For simplicity, we just send a generic success response.
+        std::string resp = "*3\r\n$11\r\nunsubscribe\r\n$-1\r\n:0\r\n";
+        PubSubManager::instance().sendToClient(client_fd, resp);
+    } else {
+        for (size_t i = 1; i < array->elements.size(); ++i) {
+            std::string channel = extractString(array->elements[i]);
+            int total_subs = PubSubManager::instance().unsubscribe(client_fd, channel);
+            
+            std::string resp = "*3\r\n$11\r\nunsubscribe\r\n$" + std::to_string(channel.length()) + "\r\n" + channel + "\r\n:" + std::to_string(total_subs) + "\r\n";
+            PubSubManager::instance().sendToClient(client_fd, resp);
+        }
+    }
+    
+    return std::nullopt;
 }
 
 protocol::RESPObject CommandHandler::cmdLPush(const std::shared_ptr<protocol::RESPArray>& array) {

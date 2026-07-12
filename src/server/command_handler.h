@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 
+#include <optional>
+
 namespace inferno {
 namespace server {
 
@@ -16,8 +18,8 @@ public:
         return handler;
     }
 
-    // Process a parsed RESP command and return the response
-    protocol::RESPObject handleCommand(const protocol::RESPObject& command);
+    // Process a parsed RESP command and return the response (if any)
+    std::optional<protocol::RESPObject> handleCommand(const protocol::RESPObject& command, network::socket_t client_fd = 0);
 
     // Get the global storage dictionary (mainly for testing)
     storage::Dict& getDict() { return dict_; }
@@ -55,6 +57,11 @@ private:
     
     // Server Configuration
     protocol::RESPObject cmdConfig(const std::shared_ptr<protocol::RESPArray>& array);
+    
+    // Pub/Sub
+    protocol::RESPObject cmdPublish(const std::shared_ptr<protocol::RESPArray>& array);
+    std::optional<protocol::RESPObject> cmdSubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd);
+    std::optional<protocol::RESPObject> cmdUnsubscribe(const std::shared_ptr<protocol::RESPArray>& array, network::socket_t client_fd);
     
     // List commands
     protocol::RESPObject cmdLPush(const std::shared_ptr<protocol::RESPArray>& array);

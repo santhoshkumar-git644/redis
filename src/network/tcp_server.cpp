@@ -1,6 +1,7 @@
 #include "tcp_server.h"
 #include "../utils/logger.h"
 #include "../server/command_handler.h"
+#include "../server/pubsub.h"
 #include "../persistence/aof.h"
 #include "../persistence/rdb.h"
 #include <vector>
@@ -66,6 +67,14 @@ bool TCPServer::start() {
         return false;
     }
 
+    // Initialize Pub/Sub send callback
+    server::PubSubManager::instance().setSendCallback([this](network::socket_t fd, const std::string& msg) {
+        auto conn = connection_manager_->getConnection(fd);
+        if (conn) {
+            conn->getSocket().send(msg.c_str(), msg.length());
+        }
+    });
+
     // Register active expiration as a timer event (runs every 100ms)
     event_loop_->addTimer(std::chrono::milliseconds(100), []() {
         server::CommandHandler::instance().runActiveExpiration();
@@ -114,6 +123,13 @@ void TCPServer::handleNewConnection(socket_t /* fd */, EventType type) {
     }
 }
 
+void TCPServer::handleClientDisconnect(socket_t fd) {
+    LOG_INFO("Client disconnected, FD: " + std::to_string(fd));
+    server::PubSubManager::instance().unsubscribeAll(fd);
+    event_loop_->removeEvent(fd);
+    connection_manager_->removeConnection(fd);
+}
+
 void TCPServer::handleClientData(socket_t fd, EventType type) {
     auto connection = connection_manager_->getConnection(fd);
     if (!connection) {
@@ -121,9 +137,7 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
     }
 
     if (type == EventType::ERROR) {
-        LOG_INFO("Client disconnected with error");
-        event_loop_->removeEvent(fd);
-        connection_manager_->removeConnection(fd);
+        handleClientDisconnect(fd);
         return;
     }
 
@@ -139,27 +153,34 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
             while (true) {
                 auto res = parser.parse(parsed_obj);
                 if (res == protocol::RESPParser::ParseResult::OK) {
-                    // Dispatch the command to the CommandHandler
-                    protocol::RESPObject response_obj = server::CommandHandler::instance().handleCommand(parsed_obj);
-                    
-                    std::string response = protocol::serializeRESP(response_obj);
-                    connection->getSocket().send(response.c_str(), response.length());
+                    if (std::holds_alternative<std::shared_ptr<protocol::RESPArray>>(parsed_obj)) {
+                        auto arr = std::get<std::shared_ptr<protocol::RESPArray>>(parsed_obj);
+                        if (!arr->elements.empty() && std::holds_alternative<protocol::RESPBulkString>(arr->elements[0])) {
+                            std::string cmd_name = std::get<protocol::RESPBulkString>(arr->elements[0]).value;
+                            LOG_DEBUG("Executing command: " + cmd_name);
+                        }
+
+                        std::optional<protocol::RESPObject> response_obj = server::CommandHandler::instance().handleCommand(parsed_obj, fd);
+                        
+                        if (response_obj) {
+                            std::string response_str = protocol::serializeRESP(*response_obj);
+                            LOG_DEBUG("Sending response of length " + std::to_string(response_str.length()));
+                            connection->getSocket().send(response_str.c_str(), response_str.length());
+                        }
+                    }
                 } else if (res == protocol::RESPParser::ParseResult::NEED_MORE) {
                     break;
                 } else {
                     LOG_ERROR("Malformed RESP data received from client");
                     std::string err = "-ERR Protocol error\r\n";
                     connection->getSocket().send(err.c_str(), err.length());
-                    event_loop_->removeEvent(fd);
-                    connection_manager_->removeConnection(fd);
+                    handleClientDisconnect(fd);
                     break;
                 }
             }
         } else if (bytes_read == 0) {
             // Client closed connection gracefully
-            LOG_INFO("Client disconnected gracefully");
-            event_loop_->removeEvent(fd);
-            connection_manager_->removeConnection(fd);
+            handleClientDisconnect(fd);
         } else {
 #ifdef _WIN32
             int error = WSAGetLastError();
@@ -167,9 +188,8 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
 #else
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
 #endif
-                LOG_ERROR("Read error on client socket");
-                event_loop_->removeEvent(fd);
-                connection_manager_->removeConnection(fd);
+                LOG_ERROR("Socket read error on client FD: " + std::to_string(fd));
+                handleClientDisconnect(fd);
             }
         }
     }
