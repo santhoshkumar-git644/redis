@@ -30,6 +30,9 @@ InfernoObject::InfernoObject(std::string str)
 InfernoObject::InfernoObject(int64_t val)
     : type_(ObjectType::STRING), encoding_(ObjectEncoding::INT), value_(val) {}
 
+InfernoObject::InfernoObject(ListTag)
+    : type_(ObjectType::LIST), encoding_(ObjectEncoding::QUICKLIST), value_(std::deque<std::string>()) {}
+
 InfernoObject::SharedPtr InfernoObject::create(std::string str) {
     // We can check if it parses as an int first, and if so, check the shared pool
     int64_t val;
@@ -46,6 +49,10 @@ InfernoObject::SharedPtr InfernoObject::create(int64_t val) {
     auto shared = SharedObjects::getInteger(val);
     if (shared) return shared;
     return std::shared_ptr<InfernoObject>(new InfernoObject(val));
+}
+
+InfernoObject::SharedPtr InfernoObject::createList() {
+    return std::shared_ptr<InfernoObject>(new InfernoObject(ListTag{}));
 }
 
 void InfernoObject::try_encode_int() {
@@ -78,6 +85,20 @@ bool InfernoObject::getInt(int64_t& out) const {
     const std::string& str = std::get<std::string>(value_);
     auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), out);
     return ec == std::errc() && ptr == str.data() + str.size();
+}
+
+std::deque<std::string>& InfernoObject::getList() {
+    if (type_ != ObjectType::LIST) {
+        throw std::runtime_error("Object is not a list");
+    }
+    return std::get<std::deque<std::string>>(value_);
+}
+
+const std::deque<std::string>& InfernoObject::getList() const {
+    if (type_ != ObjectType::LIST) {
+        throw std::runtime_error("Object is not a list");
+    }
+    return std::get<std::deque<std::string>>(value_);
 }
 
 } // namespace storage

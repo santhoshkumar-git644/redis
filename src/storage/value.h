@@ -5,17 +5,20 @@
 #include <variant>
 #include <memory>
 #include "../memory/allocator.h"
+#include <deque>
 
 namespace inferno {
 namespace storage {
 
 enum class ObjectType {
     STRING,
+    LIST,
 };
 
 enum class ObjectEncoding {
     RAW,        
-    INT         
+    INT,
+    QUICKLIST    // Using std::deque for chunked contiguous memory
 };
 
 class InfernoObject {
@@ -33,6 +36,7 @@ public:
 
     static SharedPtr create(std::string str);
     static SharedPtr create(int64_t val);
+    static SharedPtr createList();
     
     ~InfernoObject() = default;
 
@@ -41,18 +45,25 @@ public:
     
     std::string toString() const;
     bool getInt(int64_t& out) const;
+    
+    // List operations
+    std::deque<std::string>& getList();
+    const std::deque<std::string>& getList() const;
 
 private:
     // Private constructors to enforce use of `create` (factory pattern)
     InfernoObject() : type_(ObjectType::STRING), encoding_(ObjectEncoding::RAW), value_(std::string("")) {}
     explicit InfernoObject(std::string str);
     explicit InfernoObject(int64_t val);
+    // Construct empty list
+    struct ListTag {};
+    explicit InfernoObject(ListTag);
 
     void try_encode_int();
 
     ObjectType type_;
     ObjectEncoding encoding_;
-    std::variant<std::string, int64_t> value_;
+    std::variant<std::string, int64_t, std::deque<std::string>> value_;
 };
 
 // Global pool of shared objects
