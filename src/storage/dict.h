@@ -41,6 +41,9 @@ public:
     bool removeExpire(const std::string& key);
     void activeExpireCheck();
 
+    // Iterate read-only for persistence (RDB)
+    void forEachReadOnly(const std::function<void(const std::string&, const InfernoObject::SharedPtr&, uint64_t)>& callback) const;
+
     size_t size() const { return size_; }
 
 private:

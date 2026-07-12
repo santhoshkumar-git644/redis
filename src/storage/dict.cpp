@@ -246,5 +246,16 @@ void Dict::activeExpireCheck() {
     }
 }
 
+void Dict::forEachReadOnly(const std::function<void(const std::string&, const InfernoObject::SharedPtr&, uint64_t)>& callback) const {
+    std::shared_lock<std::shared_mutex> lock(mutex_);
+    for (size_t i = 0; i < table_.size(); ++i) {
+        DictEntry* entry = table_[i];
+        while (entry) {
+            callback(entry->key, entry->value, entry->expire_time_ms);
+            entry = entry->next;
+        }
+    }
+}
+
 } // namespace storage
 } // namespace inferno
