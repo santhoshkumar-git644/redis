@@ -58,6 +58,10 @@ protocol::RESPObject CommandHandler::handleCommand(const protocol::RESPObject& c
     if (cmd_name == "RPOP") return cmdRPop(array);
     if (cmd_name == "LRANGE") return cmdLRange(array);
     if (cmd_name == "LLEN") return cmdLLen(array);
+    if (cmd_name == "SADD") return cmdSAdd(array);
+    if (cmd_name == "SREM") return cmdSRem(array);
+    if (cmd_name == "SMEMBERS") return cmdSMembers(array);
+    if (cmd_name == "SISMEMBER") return cmdSIsMember(array);
 
     return protocol::RESPError("ERR unknown command '" + cmd_name + "'");
 }
@@ -455,6 +459,97 @@ protocol::RESPObject CommandHandler::cmdLRange(const std::shared_ptr<protocol::R
     }
     
     return result;
+}
+
+protocol::RESPObject CommandHandler::cmdSAdd(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'sadd' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) {
+        opt_val = storage::InfernoObject::createSet();
+        dict_.set(key, opt_val);
+    } else if (opt_val->getType() != storage::ObjectType::SET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& set = opt_val->getSet();
+    int added = 0;
+    for (size_t i = 2; i < array->elements.size(); ++i) {
+        if (set.insert(extractString(array->elements[i])).second) {
+            added++;
+        }
+    }
+    
+    return protocol::RESPInteger(added);
+}
+
+protocol::RESPObject CommandHandler::cmdSRem(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() < 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'srem' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPInteger(0);
+    if (opt_val->getType() != storage::ObjectType::SET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto& set = opt_val->getSet();
+    int removed = 0;
+    for (size_t i = 2; i < array->elements.size(); ++i) {
+        if (set.erase(extractString(array->elements[i]))) {
+            removed++;
+        }
+    }
+    
+    if (set.empty()) {
+        dict_.del(key);
+    }
+    
+    return protocol::RESPInteger(removed);
+}
+
+protocol::RESPObject CommandHandler::cmdSMembers(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 2) {
+        return protocol::RESPError("ERR wrong number of arguments for 'smembers' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return std::make_shared<protocol::RESPArray>();
+    if (opt_val->getType() != storage::ObjectType::SET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    auto result = std::make_shared<protocol::RESPArray>();
+    for (const auto& member : opt_val->getSet()) {
+        result->elements.push_back(protocol::RESPBulkString(member));
+    }
+    
+    return result;
+}
+
+protocol::RESPObject CommandHandler::cmdSIsMember(const std::shared_ptr<protocol::RESPArray>& array) {
+    if (array->elements.size() != 3) {
+        return protocol::RESPError("ERR wrong number of arguments for 'sismember' command");
+    }
+    std::string key = extractString(array->elements[1]);
+    std::string member = extractString(array->elements[2]);
+    
+    auto opt_val = dict_.get(key);
+    if (!opt_val) return protocol::RESPInteger(0);
+    if (opt_val->getType() != storage::ObjectType::SET) {
+        return protocol::RESPError("WRONGTYPE Operation against a key holding the wrong kind of value");
+    }
+    
+    if (opt_val->getSet().count(member)) {
+        return protocol::RESPInteger(1);
+    }
+    return protocol::RESPInteger(0);
 }
 
 } // namespace server
