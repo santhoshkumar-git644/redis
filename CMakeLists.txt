@@ -62,6 +62,7 @@ add_executable(
   tests/list_test.cpp
   tests/set_hash_test.cpp
   tests/zset_test.cpp
+  tests/aof_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp
@@ -71,6 +72,8 @@ add_executable(
   src/protocol/resp_types.cpp
   src/storage/value.cpp
   src/storage/dict.cpp
+  src/storage/skiplist.cpp
+  src/persistence/aof.cpp
   src/server/command_handler.cpp
 )
 
