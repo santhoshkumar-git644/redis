@@ -100,7 +100,29 @@ TEST_F(RDBTest, SerializeAllTypes) {
     auto zscore_cmd = std::make_shared<RESPArray>();
     zscore_cmd->elements = { RESPBulkString("ZSCORE"), RESPBulkString("rdb_zset"), RESPBulkString("pi") };
     auto zscore_res = handler.handleCommand(zscore_cmd);
-    EXPECT_EQ(std::stod(std::get<RESPBulkString>(zscore_res)), 3.14);
+    EXPECT_TRUE(std::holds_alternative<RESPBulkString>(zscore_res));
+    EXPECT_EQ(std::stod(std::get<RESPBulkString>(zscore_res).value), 3.14);
+    
+    // Verify List
+    auto llen_cmd = std::make_shared<RESPArray>();
+    llen_cmd->elements = { RESPBulkString("LLEN"), RESPBulkString("rdb_list") };
+    auto llen_res = handler.handleCommand(llen_cmd);
+    EXPECT_TRUE(std::holds_alternative<RESPInteger>(llen_res));
+    EXPECT_EQ(std::get<RESPInteger>(llen_res).value, 1);
+    
+    // Verify Set
+    auto sismember_cmd = std::make_shared<RESPArray>();
+    sismember_cmd->elements = { RESPBulkString("SISMEMBER"), RESPBulkString("rdb_set"), RESPBulkString("set_val") };
+    auto sismember_res = handler.handleCommand(sismember_cmd);
+    EXPECT_TRUE(std::holds_alternative<RESPInteger>(sismember_res));
+    EXPECT_EQ(std::get<RESPInteger>(sismember_res).value, 1);
+    
+    // Verify Hash
+    auto hget_cmd = std::make_shared<RESPArray>();
+    hget_cmd->elements = { RESPBulkString("HGET"), RESPBulkString("rdb_hash"), RESPBulkString("field1") };
+    auto hget_res = handler.handleCommand(hget_cmd);
+    EXPECT_TRUE(std::holds_alternative<RESPBulkString>(hget_res));
+    EXPECT_EQ(std::get<RESPBulkString>(hget_res).value, "val1");
 }
 
 TEST_F(RDBTest, BackgroundSave) {
