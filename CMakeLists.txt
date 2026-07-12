@@ -68,6 +68,7 @@ add_executable(
   tests/pubsub_test.cpp
   tests/transaction_test.cpp
   tests/watch_test.cpp
+  tests/pipelining_test.cpp
   src/network/socket.cpp
   src/network/event_loop.cpp
   src/network/connection_manager.cpp

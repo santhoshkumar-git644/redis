@@ -151,6 +151,8 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
             parser.feed(buffer.data(), bytes_read);
 
             protocol::RESPObject parsed_obj;
+            std::string out_buffer;
+            
             while (true) {
                 auto res = parser.parse(parsed_obj);
                 if (res == protocol::RESPParser::ParseResult::OK) {
@@ -164,9 +166,7 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
                         std::optional<protocol::RESPObject> response_obj = server::CommandHandler::instance().handleCommand(parsed_obj, fd);
                         
                         if (response_obj) {
-                            std::string response_str = protocol::serializeRESP(*response_obj);
-                            LOG_DEBUG("Sending response of length " + std::to_string(response_str.length()));
-                            connection->getSocket().send(response_str.c_str(), response_str.length());
+                            out_buffer += protocol::serializeRESP(*response_obj);
                         }
                     }
                 } else if (res == protocol::RESPParser::ParseResult::NEED_MORE) {
@@ -176,8 +176,13 @@ void TCPServer::handleClientData(socket_t fd, EventType type) {
                     std::string err = "-ERR Protocol error\r\n";
                     connection->getSocket().send(err.c_str(), err.length());
                     handleClientDisconnect(fd);
-                    break;
+                    return; // Abort processing this buffer entirely
                 }
+            }
+            
+            if (!out_buffer.empty()) {
+                LOG_DEBUG("Sending pipelined response of length " + std::to_string(out_buffer.length()));
+                connection->getSocket().send(out_buffer.c_str(), out_buffer.length());
             }
         } else if (bytes_read == 0) {
             // Client closed connection gracefully
